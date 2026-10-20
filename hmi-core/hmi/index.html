@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HMI</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body class="edit">
+
+<header class="bar">
+  <div class="bar-group">
+    <button id="btn-project" class="proj" title="Project settings">New project</button>
+    <nav id="screens" class="screens" aria-label="Screens"></nav>
+    <button id="btn-add-screen" class="ghost edit-only" title="Add a screen">+ Screen</button>
+    <button id="btn-calcs" class="ghost edit-only" title="Values the hub works out from other tags">ƒ Calculations</button>
+    <button id="btn-rec" class="ghost edit-only" title="What the recorder stores, and its rules: opens the database browser (node db-browser.js, port 8088)">⏺ Recording</button>
+    <button id="btn-codes" class="ghost edit-only" title="Texts and descriptions for fault and alarm codes">ⓘ Code texts</button>
+  </div>
+  <div class="bar-group">
+    <button id="recpause" class="recpause" type="button" hidden>⏸ Recording paused</button>
+    <button id="alarmbar" class="alarmbar none" type="button"><span class="alarmbar-icon" aria-hidden="true">▲</span><span class="alarmbar-text">No alarms</span></button>
+    <span id="conn" class="conn"><span class="dot"></span><span class="conn-text">Not connected</span></span>
+    <button id="btn-save" class="edit-only">Save</button>
+    <button id="btn-export" class="ghost edit-only">Export</button>
+    <button id="btn-import" class="ghost edit-only">Import</button>
+    <input id="file-import" type="file" accept="application/json,.json" hidden>
+    <div class="mode" role="group" aria-label="Mode">
+      <button id="mode-edit" class="on" aria-pressed="true">Edit</button>
+      <button id="mode-run" aria-pressed="false">Run</button>
+    </div>
+  </div>
+</header>
+
+<main class="work">
+  <aside id="palette" class="palette edit-only" aria-label="Widgets"></aside>
+  <section id="viewport" class="viewport">
+    <div id="canvas" class="canvas edit"></div>
+  </section>
+  <aside id="inspector" class="inspector edit-only" aria-label="Properties"></aside>
+</main>
+
+<datalist id="taglist"></datalist>
+<div id="toast" class="toast" hidden></div>
+
+<script src="widgets.js"></script>
+<script src="svgwidget.js"></script>
+<script src="svgmap.js"></script>
+<script src="calcs.js"></script>
+<script src="codes.js"></script>
+<script src="alarms.js"></script>
+<script src="tagbrowser.js"></script>
+<script src="anim.js"></script>
+<script src="animedit.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

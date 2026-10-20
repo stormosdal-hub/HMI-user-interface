@@ -1,0 +1,15 @@
+{
+  "lists": {
+    "v90-faults": {
+      "name": "V90-faults",
+      "prefix": "",
+      "codes": {
+        "1117": {
+          "text": "motor encoder",
+          "info": "Encoder error in motor",
+          "updated": 1791033377489
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "name": "hmi-core",
+  "version": "0.1.0",
+  "description": "Reusable browser HMI + tag hub. Bind widgets to tags, connect anything through small adapters.",
+  "main": "hub.js",
+  "scripts": {
+    "start": "node hub.js",
+    "recorder": "node recorder.js",
+    "adapter": "node adapters/binary-adapter.js adapters/binary-layouts/kjoreverk-layout.json",
+    "tcplink": "node adapters/tcplink-adapter.js",
+    "db-browser": "node db-browser.js"
+  },
+  "dependencies": {
+    "ws": "^8.18.0",
+    "three": "0.186.0"
+  },
+  "license": "MIT"
+}

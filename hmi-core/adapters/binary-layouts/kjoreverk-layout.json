@@ -1,0 +1,203 @@
+{
+  "layout": "kjoreverk",
+  "_notes": [
+    "Passer til KjoreverkLink v0.8: opplink format 5 (112 byte, magic 16#A5), nedlink format 1 (46 byte, magic 16#5A).",
+    "PLS-en er passiv og lytter på port 2000; denne adapteren kobler til den. Sett \"connect\" til IP-adressen til PLS-en, eller start adapteren med --plc=<ip>:2000.",
+    "Hver opplinkblokk kontrolleres (magic, versjon, lengde). En blokk som ikke stemmer, får adapteren til å lete etter neste header, slik Pi-broen gjorde.",
+    "Hver kommandoblokk har magic 16#5A, versjon 1, lengde 46 og et sekvensnummer +1 per blokk, så KjoreverkLink godtar den. En blokk den avviser, får PLS-en til å bryte forbindelsen (rxBadFrames teller dem).",
+    "sendEveryMs 500: kommandoblokken gjentas hvert 500 ms, godt innenfor cmdTimeout på 2 s i PLS-en. Stopper adapteren, nullstiller PLS-en alle kommandoer etter 2 s.",
+    "ts er sendetiden til PLS-en. KjoreverkLink leser den med RD_SYS_T (UTC) med mindre useLocalTime er satt; ts_is_local viser hvilken. lastDriveTime_age måles mot ts, så klokken på PC-en spiller ingen rolle - men lastDriveTime må skrives av logikken din med samme klokke (RD_SYS_T for UTC).",
+    "Skalering: speedAct 16#4000 = p2000 (referansehastighet, fabrikkverdi 3000 rpm); torqueAct 16#4000 = p2003 (referansemoment, fabrikkverdi 1.00 Nm). Gjøres som beregninger i HMI-en.",
+    "Bitene i statusWord følger ZSW1 for standardtelegram 1, 2, 3 og 5 (V90-bruksanvisningen, avsnitt 8.4.1). Andre telegrammer bruker bit 11..15 annerledes.",
+    "bitNN / cmd_bitNN / ints_N ... er posisjonene i datastrømmen. Gi dem nye navn her (\"names\"-listen til et felt) for å gi dem en betydning; posisjonene forblir kontrakten.",
+    "Hold-for-å-kjøre-bit (jogg, krypkjøring): legg til  \"overrides\": { \"cmd_bitNN\": { \"hold\": 600 } }  under toPlc, og gi HMI-knappen \"Repeat while held\" = 200 ms. Handlingsbit som må slå seg av selv (start, reset), kan bruke \"autoReset\" i stedet. Enkeltbit kan gis nye navn på samme måte: \"cmd_bitNN\": { \"name\": \"jog_fwd\", \"hold\": 600 }."
+  ],
+  "mode": "fixed",
+  "device": "kv_1",
+  "byteOrder": "big",
+  "bitOrder": "lsb0",
+  "connect": "10.0.123.51:2000",
+  "reconnectMs": 1000,
+  "timeoutMs": 3000,
+  "onReconnect": "clearBits",
+  "onHubLoss": "clearBits",
+  "fromPlc": {
+    "length": 112,
+    "check": [
+      {
+        "type": "Byte",
+        "offset": "0.0",
+        "value": "16#A5"
+      },
+      {
+        "type": "Byte",
+        "offset": "1.0",
+        "value": 5
+      },
+      {
+        "type": "Byte",
+        "offset": "2.0",
+        "auto": "length"
+      },
+      {
+        "type": "UInt",
+        "offset": "4.0",
+        "auto": "counter"
+      }
+    ],
+    "fields": [
+      {
+        "name": "flags",
+        "type": "Byte",
+        "offset": "3.0",
+        "bits": {
+          "0": "ts_is_local"
+        }
+      },
+      {
+        "name": "ts",
+        "type": "DTL",
+        "offset": "6.0",
+        "clock": "utc",
+        "description": "PLC send time"
+      },
+      {
+        "name": "bit{i:2}",
+        "type": "Bool",
+        "offset": "18.0",
+        "count": 64,
+        "description": "KjoreverkTxBits bit00..bit63"
+      },
+      {
+        "name": "speedAct",
+        "type": "Int",
+        "offset": "26.0",
+        "description": "normalized actual speed, 16#4000 = p2000"
+      },
+      {
+        "name": "torqueAct",
+        "type": "Int",
+        "offset": "28.0",
+        "description": "normalized actual torque, 16#4000 = p2003"
+      },
+      {
+        "name": "faultCode",
+        "type": "Word",
+        "offset": "30.0",
+        "event": "alarm",
+        "text": "Drive fault F{value}"
+      },
+      {
+        "name": "warnCode",
+        "type": "Word",
+        "offset": "32.0",
+        "event": "warning",
+        "text": "Drive alarm A{value}"
+      },
+      {
+        "name": "statusWord",
+        "type": "Word",
+        "offset": "34.0",
+        "description": "ZSW1",
+        "bits": {
+          "0": "zsw1_ready_on",
+          "1": "zsw1_ready_op",
+          "2": "zsw1_enabled",
+          "3": "zsw1_fault",
+          "4": "zsw1_no_off2",
+          "5": "zsw1_no_off3",
+          "6": "zsw1_on_inhibited",
+          "7": "zsw1_alarm",
+          "8": "zsw1_speed_in_tol",
+          "9": "zsw1_control_req",
+          "10": "zsw1_n_reached",
+          "11": "zsw1_no_limit",
+          "12": "zsw1_brake_open",
+          "13": "zsw1_no_motor_overtemp",
+          "14": "zsw1_forward",
+          "15": "zsw1_no_power_overload"
+        }
+      },
+      {
+        "name": "ints_{i}",
+        "type": "Int",
+        "offset": "36.0",
+        "count": 12
+      },
+      {
+        "name": "words_{i}",
+        "type": "Word",
+        "offset": "60.0",
+        "count": 4
+      },
+      {
+        "name": "lastDriveTime",
+        "type": "DTL",
+        "offset": "68.0",
+        "clock": "utc",
+        "age": true,
+        "ageFrom": "ts",
+        "description": "when the drive last ran; lastDriveTime_age = seconds between it and ts"
+      },
+      {
+        "name": "dints_{i}",
+        "type": "DInt",
+        "offset": "80.0",
+        "count": 8
+      }
+    ]
+  },
+  "toPlc": {
+    "length": 46,
+    "enabled": true,
+    "sendEveryMs": 500,
+    "fixed": [
+      {
+        "type": "Byte",
+        "offset": "0.0",
+        "value": "16#5A"
+      },
+      {
+        "type": "Byte",
+        "offset": "1.0",
+        "value": 1
+      },
+      {
+        "type": "Byte",
+        "offset": "2.0",
+        "auto": "length"
+      },
+      {
+        "type": "Byte",
+        "offset": "3.0",
+        "value": 0
+      },
+      {
+        "type": "UInt",
+        "offset": "4.0",
+        "auto": "counter"
+      }
+    ],
+    "fields": [
+      {
+        "name": "cmd_bit{i:2}",
+        "type": "Bool",
+        "offset": "6.0",
+        "count": 64
+      },
+      {
+        "name": "cmd_ints_{i}",
+        "type": "Int",
+        "offset": "14.0",
+        "count": 12
+      },
+      {
+        "name": "cmd_words_{i}",
+        "type": "Word",
+        "offset": "38.0",
+        "count": 4
+      }
+    ],
+    "overrides": {}
+  }
+}

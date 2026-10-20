@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Database browser</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header class="top">
+  <a class="brand" href="#/">Database browser</a>
+  <span id="dbfile" class="dbfile"></span>
+  <span id="mode" class="mode"></span>
+  <a id="paused" class="pausedchip" href="#/recording" hidden></a>
+  <span class="grow"></span>
+  <button id="btn-refresh" type="button" title="Read the database again">Refresh</button>
+  <button id="btn-backup" type="button" title="A copy of the whole database, next to it, consistent even while the recorder writes">Back up</button>
+</header>
+<div class="work">
+  <nav id="side" class="side" aria-label="Tables"></nav>
+  <main id="main" class="main"></main>
+</div>
+<div id="toast" class="toast" hidden></div>
+<script src="app.js"></script>
+</body>
+</html>

@@ -1,0 +1,56 @@
+{
+  "_notes": [
+    "Innstillingene til tcplink-adapter.js for kjøreverket. Passer til TcpLink-blokken (format 7 fra PLS-en, format 3 tilbake), se TCP_LINK.md i PLS-prosjektet.",
+    "Navnene og størrelsene står IKKE her: adapteren får dem fra PLS-en ved hver tilkobling. Her står bare det PLS-en ikke kan si noe om: hvilke plasser som er alarmer, bitene i et statusord, og hvilke kommandobits som er hold-for-å-kjøre.",
+    "Taggene er plassene: bit00..bit31, words_0, times_0, ints_0, dints_0, reals_0, og cmd_bit00, cmd_words_0, cmd_ints_0, cmd_dints_0, cmd_reals_0 tilbake. Indeksen er den samme som i LinkDB og LinkNames.",
+    "Tilordningen under følger LinkNames.db og TCP_LINK.md avsnitt 9: words_0 = Feilkode, words_1 = Varselkode, words_2 = Statusord (ZSW1), rx.bits[5] og [6] = Jogg forover og Jogg bakover. Flytter du dem i PLS-en, flytt dem her også.",
+    "\"tags\" for en plass fra PLS-en: event (info, warning, alarm), text ({value} blir verdien), codes (en kodeliste i codes.json, som gir alarmteksten kodens tekst), delay (ms alarmen må stå før den vises), bits (navn på enkeltbits i et word, en int eller en dint), description.",
+    "\"tags\" for en kommando: hold (ms; hold-for-å-kjøre, gi HMI-knappen \"Repeat while held\" = 200 ms) eller autoReset (ms; biten slår seg av selv), description.",
+    "Bitene i Statusord følger ZSW1 for standardtelegram 1, 2, 3 og 5 (V90-bruksanvisningen, avsnitt 8.4.1). Andre telegrammer bruker bit 11..15 annerledes.",
+    "connect er adressen til PLS-en; --plc=<ip>:<port> på kommandolinjen overstyrer den. PLS-en tar imot én klient per TcpLink-instans: stopp binary-adapter.js og andre klienter på samme port først."
+  ],
+  "device": "kv_1",
+  "connect": "10.0.123.51:2000",
+  "commands": true,
+  "sendEveryMs": 500,
+  "timeoutMs": 3000,
+  "reconnectMs": 2000,
+  "onReconnect": "clearBits",
+  "onHubLoss": "clearBits",
+  "tags": {
+    "words_0": {
+      "event": "alarm",
+      "text": "Drive fault F{value}"
+    },
+    "words_1": {
+      "event": "warning",
+      "text": "Drive alarm A{value}"
+    },
+    "words_2": {
+      "bits": {
+        "0": "zsw1_ready_on",
+        "1": "zsw1_ready_op",
+        "2": "zsw1_enabled",
+        "3": "zsw1_fault",
+        "4": "zsw1_no_off2",
+        "5": "zsw1_no_off3",
+        "6": "zsw1_on_inhibited",
+        "7": "zsw1_alarm",
+        "8": "zsw1_speed_in_tol",
+        "9": "zsw1_control_req",
+        "10": "zsw1_n_reached",
+        "11": "zsw1_no_limit",
+        "12": "zsw1_brake_open",
+        "13": "zsw1_no_motor_overtemp",
+        "14": "zsw1_forward",
+        "15": "zsw1_no_power_overload"
+      }
+    },
+    "cmd_bit05": {
+      "hold": 600
+    },
+    "cmd_bit06": {
+      "hold": 600
+    }
+  }
+}
