@@ -1,5 +1,5 @@
 /*
- * Taggleser - alle tagger i huben med live verdi, kvalitet og alder.
+ * Taggleser - alle tagger i huben med live verdi, datatype, kvalitet og alder.
  *
  * H.openTagBrowser({
  *   tags()        -> Map(navn -> oppføring i registeret)      (state.tags)
@@ -7,6 +7,7 @@
  *   vars          -> prosjektvariabler, så en valgt tag kan settes inn som ${dev}.temp
  *   current       -> taggen feltet har nå (oppløst), uthevet
  *   pick(text)    -> kalles med den valgte taggen; utelat for bare å se
+ *   title         -> overskriften (valgfri), f.eks. 'Data list'
  *   editName(tag, name, info) -> Promise: lagrer ditt eget navn og beskrivelse for en tag
  *                    (tagnavn, holdt av huben); utelat, så blir navn bare vist
  * })
@@ -24,6 +25,7 @@
     if (s < 3600) return Math.floor(s / 60) + ' min ago';
     return Math.floor(s / 3600) + ' h ago';
   };
+  const TYPES = { boolean: 'bool', number: 'number', string: 'string' };
   const show = v => (v === null || v === undefined) ? '\u2014' : typeof v === 'boolean' ? String(v) : typeof v === 'number' ? String(+v.toFixed(3)) : String(v);
 
   H.openTagBrowser = function (opts) {
@@ -39,9 +41,10 @@
     const box = el('div', 'mm tb');
     box.setAttribute('role', 'dialog');
     box.setAttribute('aria-modal', 'true');
-    box.setAttribute('aria-label', 'Tags on the hub');
+    const heading = opts.title || (picking ? 'Choose a tag' : 'Tags on the hub');
+    box.setAttribute('aria-label', heading);
     const head = el('header', 'mm-head');
-    const title = el('h2', null, picking ? 'Choose a tag' : 'Tags on the hub');
+    const title = el('h2', null, heading);
     const count = el('span', 'tb-count');
     title.append(count);
     const closeBtn = el('button', 'ghost', 'Close');
@@ -173,7 +176,7 @@
       rows = new Map();
       let shown = 0, group = null;
       const headRow = el('div', 'tb-row tb-th');
-      headRow.append(el('span', null, 'Tag'), el('span', null, 'Value'), el('span', null, 'Unit'), el('span', null, 'Updated'), el('span', null, ''));
+      headRow.append(el('span', null, 'Tag'), el('span', null, 'Value'), el('span', null, 'Unit'), el('span', null, 'Type'), el('span', null, 'Updated'), el('span', null, ''));
       table.append(headRow);
       for (const name of names) {
         const info = tags.get(name);
@@ -196,8 +199,9 @@
         if (info.writable) { const wr = el('span', 'tb-rw', 'writable'); nm.append(wr); }
         if (info.label) nm.append(el('span', 'tb-label', info.label));
         const valueCell = el('span', 'tb-val'), unitCell = el('span', 'tb-unit', info.unit || ''), ageCell = el('span', 'tb-age');
+        const typeCell = el('span', 'tb-type', TYPES[info.dataType] || info.dataType || '');
         const stateCell = el('span', 'tb-state');
-        row.append(nm, valueCell, unitCell, ageCell, stateCell);
+        row.append(nm, valueCell, unitCell, typeCell, ageCell, stateCell);
         const about = [info.label, info.info, info.formula ? `${name} = ${info.formula}` : info.description].filter(Boolean);
         if (about.length) row.title = about.join('\n');
         if (opts.current && opts.current === name) row.classList.add('current');

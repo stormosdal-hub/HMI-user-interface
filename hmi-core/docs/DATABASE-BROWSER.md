@@ -42,8 +42,7 @@ Start den fra `hmi-core`, på datamaskinen som har databasen (Pi-en):
 node db-browser.js
 ```
 
-Åpne så `http://<the Pi's address>:8088` i en nettleser, eller trykk **⏺ Recording** i HMI-en
-(Edit-modus). Den trenger **Node.js 22.13 eller nyere**, som recorderen.
+Åpne så `http://<the Pi's address>:8088` i en nettleser. Den trenger **Node.js 22.13 eller nyere**, som recorderen.
 
 | Valg | Standard | Hva det gjør |
 |---|---|---|
@@ -148,7 +147,7 @@ Mens pausen er på:
   - siden sier **The recorder has paused: …** når recorderen har tatt pausen i bruk, innen
     noen få sekunder;
   - **⏸ Recording paused** vises i topplinjen på hver side her, og i HMI-en (også i
-    Run-modus). I HMI-en åpner et klikk denne siden.
+    Run-modus).
 - **I databasen:**
   - der pausen begynner, får hver pauset tag én rad med kvalitet `3` (pauset) og ingen verdi,
     så en trend viser et hull i stedet for en linje over pausen;
@@ -187,8 +186,8 @@ over listen tar med begge.
   PLS-en i anførselstegn, og beskrivelsen fra adapteren, f.eks. layoutfilens `description`). Skriv i feltene, og trykk så **Save names**. **Now**-kolonnen oppdateres
   hvert sekund, og en verdi som endres, blinker. For å finne en bit: få den til å endre seg
   (åpne døren, trykk på knappen) og se hvilken som blinker.
-- **I HMI-en**, i Edit-modus: åpne tagoversikten (**Browse tags with live values**, eller
-  listeknappen ved siden av et tagfelt) og trykk **✎ Name tags**. Et klikk på en tag åpner da
+- **I HMI-en**, i Edit-modus: åpne tagoversikten (**☰ Data-list** i topplinjen, **Browse tags
+  with live values**, eller listeknappen ved siden av et tagfelt) og trykk **✎ Name tags**. Et klikk på en tag åpner da
   navnet og beskrivelsen dens.
 
 **Hvor de vises:**

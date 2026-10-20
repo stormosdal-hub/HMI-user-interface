@@ -441,13 +441,15 @@
   }
 
   // tagoversikten: alle tagger med levende verdi; pick() utelates for bare å se
-  function browseTags(current, pick) {
+  // (Data-list i topplinjen, og prosjektpanelet)
+  function browseTags(current, pick, title) {
     H.openTagBrowser({
       tags: () => state.tags,
       live: name => state.values.get(name),
       vars: state.config.vars,
       current: current ? resolveTag(current) : '',
       pick,
+      title,
       editName: changeName,
     });
   }
@@ -1690,19 +1692,14 @@
     });
   }
 
-  // Recording (hva som lagres, og reglene) er i databaseleseren, ved siden av dataene:
-  // node db-browser.js på hubens datamaskin, port 8088
-  function openRecording() {
-    window.open(`${location.protocol}//${location.hostname || 'localhost'}:8088/#/recording`, '_blank', 'noopener');
-  }
-  // recorderen er pauset (satt i databaseleseren): vises i topplinjen, også i Run-modus,
+  // recorderen er pauset: vises i topplinjen, også i Run-modus,
   // så ingen tror at verdier lagres når de ikke gjør det
   function renderRecPause() {
     const b = $('#recpause');
     const n = state.values.get('rec.paused'), t = state.values.get('rec.pause_text');
     const on = !!(n && n.quality !== 'bad' && Number(n.value) > 0 && state.tags.has('rec.paused'));
     b.hidden = !on;
-    if (on) b.title = `Recording paused: ${(t && t.value) || ''}. Click to see it in the database browser.`;
+    if (on) b.title = `Recording paused: ${(t && t.value) || ''}`;
   }
 
   function openCalcs() {
@@ -1795,8 +1792,7 @@
     $('#mode-run').addEventListener('click', () => setMode('run'));
     $('#btn-save').addEventListener('click', saveConfig);
     $('#btn-calcs').addEventListener('click', openCalcs);
-    $('#btn-rec').addEventListener('click', openRecording);
-    $('#recpause').addEventListener('click', openRecording);
+    $('#btn-data').addEventListener('click', () => browseTags('', undefined, 'Data list'));
     $('#inspector').addEventListener('change', () => {
       const s = inspectorShown;
       if (s && shownKeys(s.w) !== s.keys) renderInspector();

@@ -309,7 +309,7 @@ er, og et navn kan endres når som helst uten nedlasting til PLS-en.
 - **Sette dem:**
   - **Tag names** i databaseleseren viser alle tagger med live-verdien. En verdi som endrer
     seg, blinker, så du finner en bit ved å få den til å endre seg.
-  - I HMI-en (Edit-modus): **✎ Name tags** i tagoversikten.
+  - I HMI-en (Edit-modus): **✎ Name tags** i tagoversikten (**☰ Data-list** i topplinjen).
 
   Begge lagrer med en gang, uten Save av prosjektet.
 - **Hvor de vises:**
@@ -367,12 +367,14 @@ har detaljene og filformatet.
   - **Enkle rammer:** et kort med én fane og uten tittel er en enkel ramme for gruppering.
   - **Bare ett nivå:** kort kan ikke legges inni kort.
 - **Tagoversikten:** listeknappen i enden av hvert tagfelt åpner et vindu med alle taggene på
-  huben. Hver tag viser live-verdi, måleenhet og siste oppdatering, og tagger som er foreldet
+  huben. Hver tag viser live-verdi, måleenhet, datatype og siste oppdatering, og tagger som er foreldet
   eller uten verdi, er merket, så du ser med en gang om en enhet virkelig sender. Søk, filtrer
   (enheter, beregnede, live, foreldede) og klikk på en tag for å bruke den. Når en
   prosjektvariabel navngir enheten, settes taggen inn som `${kv}.speedAct`, så widgeten fortsetter
-  å følge variabelen. For trender legges den valgte taggen til i listen. *Browse tags with live
-  values* i prosjektpanelet åpner det samme vinduet bare for å se.
+  å følge variabelen. For trender legges den valgte taggen til i listen.
+- **☰ Data-list** i topplinjen (Edit-modus) åpner det samme vinduet bare for å se: alle
+  taggene på huben med navn, live-verdi, måleenhet, datatype og alder. *Browse tags with live
+  values* i prosjektpanelet gjør det samme.
 - **Tagfelt** foreslår taggene huben kjenner. Taggene trenger ikke finnes ennå: en widget
   som er koblet til en tag som mangler, viser bare `—` til taggen dukker opp.
 - **Velge flere widgeter:**
@@ -725,7 +727,7 @@ den skrivbare datadisken.
 
 **Hva som lagres**, stilles inn i databaseleseren (`node db-browser.js`, se
 [Se gjennom databasen](#se-gjennom-databasen)) under **Recording**, ved siden av hvor mye
-hver tag lagrer. **⏺ Recording** i HMI-en åpner den.
+hver tag lagrer.
 
 - **Hvor reglene ligger:** i en egen fil ved siden av databasen: `data/recorder.db` har
   `data/recorder.rules.json`. Reglene hører til databasen, ikke til prosjektet, så de står
@@ -1654,9 +1656,8 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | En del av en tegning skifter ikke farge | Formen har ikke fyll, så bruk *Paint: stroke* eller gi den fyll i tegningen. Eller ID-en er endret; koblingseditoren viser manglende deler i rødt |
 | En animasjon forblir tom | Åpne kodeeditoren og les konsollen. Vanlige årsaker: en import fra en URL, eller rendering et annet sted enn i `hmi.stage()` / `hmi.container` |
 | "three.js is not installed" | Kjør `npm install` i `hmi-core` |
-| En trend viser bare de siste minuttene | Trenden sier hvorfor: recorderen kjører ikke, eller taggen har ingen lagringsregel. Legg til en på databaseleserens Recording-side (⏺ Recording i HMI-en åpner den) |
+| En trend viser bare de siste minuttene | Trenden sier hvorfor: recorderen kjører ikke, eller taggen har ingen lagringsregel. Legg til en på databaseleserens Recording-side |
 | Databasen vokser fort | Databaseleserens Recording-side viser taggene som lagrer mest. Gi dem en minste endring, et intervall, eller *Nothing* |
-| ⏺ Recording i HMI-en åpner seg ikke | Den åpner databaseleseren på port 8088 på maskinen der huben kjører: start den der med `node db-browser.js` |
 | Ingenting lagres, selv om reglene er riktige | En pause er aktiv: **⏸ Recording paused** i topplinjen. Gjenoppta lagringen på Recording-siden, eller vent til pausen er slutt |
 | Tagnavn kan ikke lagres i databaseleseren | Det er huben som tar vare på dem: start den, eller gi databaseleseren adressen dens med `--hub` |
 | Et betjeningselement er grået ut | *Enabled when*-betingelsen er ikke oppfylt (hold musepekeren over for å se hvilken), eller enheten er frakoblet (etiketten sier *stale*) |
