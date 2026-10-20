@@ -2,24 +2,21 @@
 
 Et HMI i nettleseren for kjøreverket: en S7-1200-PLS som snakker med en Raspberry Pi over
 Open User Communication (TCP). Du lager skjermbildene i nettleseren og knytter widgeter til
-PLS-ens tagger. Recorderen lagrer det du velger i en database på Pi-en, og databaseleseren
-viser hva som er lagret.
+PLS-ens tagger.
 
 ```
- HMI-er i        <--WebSocket-->  hub.js  <--WebSocket-->  binary-adapter.js  <--TCP-->  S7-1200
- nettleseren                      tagger, historikk,       + kjoreverk-       port 2000  KjoreverkLink
- (mappen hmi/)                    beregninger, alarmer,      layout.json
+ HMI-er i        <--WebSocket-->  hub.js  <--WebSocket-->  tcplink-adapter.js  <--TCP-->  S7-1200
+ nettleseren                      tagger, historikk,       + kjoreverk-         port 2000  TcpLink
+ (mappen hmi/)                    beregninger, alarmer,      options.json                  + LinkNames
                                   prosjektlagring
-                                     |
-                                  recorder.js --> SQLite (data/recorder.db) <-- db-browser.js
 ```
 
-Huben har en liste over **tagger** (navngitte verdier som `kv_1.speedAct`). `binary-adapter.js`
-leser blokkene fra PLS-en, gjør dem om til tagger ut fra layoutfilen `kjoreverk-layout.json`, og
-sender kommandoer fra HMI-en tilbake til PLS-en. Alle nettlesere som åpner HMI-en, ser de
-samme taggene, live.
+Huben har en liste over **tagger** (verdier med et fast navn, som `kv_1.reals_0`).
+`tcplink-adapter.js` tar imot meldingene fra TcpLink-blokken i PLS-en, gjør hver plass om til
+en tag med navnet og enheten PLS-en gir den (`Hastighet [rpm]`), og sender kommandoer fra
+HMI-en tilbake til PLS-en. Alle nettlesere som åpner HMI-en, ser de samme taggene, live.
 
-![Slik henger HMI core sammen: PLS-en, binary-adapter.js, huben, HMI-en, recorderen, databasen og databaseleseren](docs/architecture.svg)
+![Slik henger HMI core sammen: PLS-en med TcpLink, tcplink-adapter.js, huben og HMI-en](docs/architecture.svg)
 
 ---
 
@@ -32,7 +29,7 @@ samme taggene, live.
 5. [Lage skjermbilder](#5-lage-skjermbilder)
 6. [Widgeter](#6-widgeter)
 7. [Beregnede verdier](#7-beregnede-verdier)
-8. [Lagring til database](#8-lagring-til-database): hva Pi-en lagrer, hvor ofte, og hvordan du pauser lagringen. Databaseleseren og alle tabellene: [docs/DATABASE-BROWSER.md](docs/DATABASE-BROWSER.md)
+8. [Lagring til database](#8-lagring-til-database): hva huben holder i minnet, og hvordan en database kobles til
 9. [Tegninger (SVG)](#9-tegninger-svg) — hva en tegning trenger
 10. [Animasjoner (Three.js)](#10-animasjoner-threejs) — hva en kodesnutt trenger
 11. [Forbindelsen til PLS-en](#11-forbindelsen-til-pls-en) — [tcplink-adapter.js med navnene fra PLS-en](#tcplink-navnene-kommer-fra-pls-en), binary-adapter.js og layouten, og [eksempeladaptere](#andre-enheter-og-programmer) for andre enheter
@@ -45,9 +42,7 @@ samme taggene, live.
 
 ## 1. Kom i gang
 
-Du trenger [Node.js](https://nodejs.org) 22.13 eller nyere for recorderen og
-databaseleseren (de bruker den innebygde SQLite-en). Huben og adapterne for PLS-en kjører på
-Node 10 og nyere. For en Raspberry Pi uten internett, se
+Du trenger [Node.js](https://nodejs.org) 10 eller nyere. For en Raspberry Pi uten internett, se
 [Installere uten internett](#installere-uten-internett-raspberry-pi).
 
 Start hver del i sin egen terminal, fra mappen `hmi-core`:
@@ -55,22 +50,23 @@ Start hver del i sin egen terminal, fra mappen `hmi-core`:
 ```bash
 npm install                      # én gang: ws (WebSocket) og three (for Animation-widgeter)
 node hub.js                      # huben og HMI-en: http://localhost:8080
-node adapters/binary-adapter.js adapters/binary-layouts/kjoreverk-layout.json   # forbindelsen til PLS-en
-node recorder.js                 # lagrer til data/recorder.db (Node 22.13+)
-node db-browser.js               # databaseleseren: http://localhost:8088
+node adapters/tcplink-adapter.js # forbindelsen til PLS-en (TcpLink)
 ```
 
-- **PLS-ens adresse** står i `"connect"` i `kjoreverk-layout.json` (`10.0.123.51:2000`). Er den en
-  annen, endre den der, eller start adapteren med `--plc=<ip>:2000`. Startes adapteren uten
-  argumenter, bruker den `adapters/binary-layouts/kjoreverk-layout.json`.
-- **Kjører PLS-en TcpLink-blokken**, start `node adapters/tcplink-adapter.js` i stedet for
-  `binary-adapter.js`. Navnene og størrelsene kommer da fra PLS-en, og det trengs ingen
-  layoutfil; se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en).
-- **At forbindelsen er oppe**, ser du på taggen `kv_1.link` (true) og i adapterens logg. Blir
-  den ikke det, se [Igangkjøring med en ekte PLS](#faste-blokker-s7-pls-er-open-user-communication)
-  og [Feilsøking](#14-feilsøking).
-- **Recorderen og databaseleseren** trengs bare når du vil lagre data; se
-  [8](#8-lagring-til-database).
+- **PLS-en** trenger TcpLink-blokken og navne-DB-en `LinkNames`; se `TCP_LINK.md` i
+  PLS-prosjektet. Navnene og størrelsene kommer fra PLS-en ved hver tilkobling, så det trengs
+  ingen layoutfil. Se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en).
+- **PLS-ens adresse** står i `"connect"` i `adapters/tcplink-options/kjoreverk-options.json`
+  (`10.0.123.51:2000`). Er den en annen, endre den der, eller start adapteren med
+  `--plc=<ip>:2000`. Startes adapteren uten argumenter, bruker den den filen.
+- **At forbindelsen er oppe**, ser du på taggen `kv_1.link` (true) og i adapterens logg.
+  Blir den ikke det, se [Feilsøking](#14-feilsøking) og diagnosen i `TCP_LINK.md` (§7 og
+  §10): `rxBadReason`, `namesStatus` og de låste feilkodene i instans-DB-en til TcpLink.
+- **PLS-en tar imot én klient** per TcpLink-instans. Stopp andre klienter på samme port
+  først, også `tcplink_web.js` fra PLS-prosjektet.
+- **Kjører PLS-en den eldre KjoreverkLink-blokken**, start
+  `node adapters/binary-adapter.js adapters/binary-layouts/kjoreverk-layout.json` i stedet; se
+  [Pakket binærdata](#pakket-binærdata).
 - **Automatisk start på Pi-en** (ved oppstart og etter strømbrudd, med omstart hvis noe
   krasjer): se `README_systemd-service.md` i mappen over `hmi-core`.
 
@@ -79,9 +75,12 @@ Bytt mellom **Edit** og **Run** øverst til høyre.
 
 **Prosjektet huben starter med** er `config/hmi.json`: skjermbildene dine, variablene, og
 beregningene for PLS-en (hastighet i rpm, moment, effekt og kontrollene i
-[7](#betingelser-og-kontroller-over-tid)). Før du legger en knapp på en kommandobit
+[7](#betingelser-og-kontroller-over-tid)). De leser TcpLink-taggene: `calc.kv_speed_rpm` er
+`kv_1.reals_0` og `calc.kv_torque_nm` er `kv_1.reals_1`, allerede i rpm og Nm. De andre
+beregningene bruker disse to, så flytter PLS-en hastigheten eller momentet til en annen plass,
+endrer du bare de to formlene. Før du legger en knapp på en kommandobit
 (`kv_1.cmd_bit03`), sjekk hva biten gjør i PLS-programmet, og gi en jog-bit `"hold"` i
-layouten (se [13](#hold-for-å-kjøre-over-et-nettverk)).
+innstillingsfilen (se [13](#hold-for-å-kjøre-over-et-nettverk)).
 
 ### Installere uten internett (Raspberry Pi)
 
@@ -100,8 +99,7 @@ Node-versjoner: 10 i Buster, 12 i Bullseye. HMI core kjører på Node 10 og nyer
 versjonene sluttet å få rettelser for flere år siden, så en Pi som skal gå i årevis, fortjener
 en ny versjon.
 
-**Slik installerer du en ny Node.js uten internett** (Node 22.13 eller nyere trengs for den
-innebygde SQLite-en som recorderen bruker):
+**Slik installerer du en ny Node.js uten internett:**
 
 1. **Finn ut hvilket bygg Pi-en trenger.** Kjør `dpkg --print-architecture` på Pi-en:
 
@@ -127,7 +125,6 @@ innebygde SQLite-en som recorderen bruker):
    hash -r
    node -v                                              # v22.x.y
    which node                                           # /usr/local/bin/node
-   node -e "require('node:sqlite'); console.log('SQLite OK')"
    ```
 
    Når Node ligger i `/opt/node22`, er en oppgradering bare å pakke ut en nyere versjon og
@@ -155,14 +152,10 @@ gjenbrukbar.
 ```
 hmi-core/
   hub.js           program: huben og HMI-en            node hub.js
-  recorder.js      program: lagrer til databasen       node recorder.js
-  db-browser.js    program: databaseleseren            node db-browser.js
   adapters/        programmer: tcplink-adapter.js og binary-adapter.js (PLS-en), tcp-bridge.js, og eksempeladapterne
-  lib/             kode programmene bruker; kjøres ikke alene (calc.js, record-rules.js)
+  lib/             kode programmene bruker; kjøres ikke alene (calc.js)
   hmi/             nettsiden til HMI-en, som huben sender til nettleseren
-  db-browser/      nettsiden til databaseleseren, som db-browser.js sender til nettleseren
   config/          prosjektet: hmi.json, codes.json, tagnames.json, assets/
-  data/            databasen og lagringsreglene (recorder.db, recorder.rules.json); lages av recorderen
   docs/            dokumentasjonen og diagrammene
 ```
 
@@ -174,16 +167,13 @@ Alt du starter med `node`, ligger altså øverst eller i `adapters/`.
 |---|---|
 | `hub.js` | Huben: tagger, WebSocket, historikk, beregninger, lagring av prosjekt og ressurser (assets) |
 | `lib/calc.js` | Formelspråket for beregnede tagger. Brukes av `hub.js` |
-| `recorder.js` | Recorderen: lagrer valgte tagger og hendelser i SQLite (trenger Node 22.13+) |
-| `lib/record-rules.js` | Lagringsreglene og regelfilen. Brukes av `recorder.js` og `db-browser.js` |
-| `db-browser.js`, `db-browser/` | Databaseleseren: recorderens database, eller en hvilken som helst SQLite-fil, på en nettside (trenger Node 22.13+, ingen npm-pakker). Se [Se gjennom databasen](#se-gjennom-databasen) |
 | `hmi/` (hele mappen) | HMI-en i nettleseren: editor, kjøremiljø, alle widgeter, stiler |
 | `package.json` | Avhengigheter (`ws`, `three`) — `npm install` lager `node_modules/` ut fra den |
 | `adapters/tcplink-adapter.js` | Forbindelsen til en PLS med TcpLink-blokken: størrelsene og navnene på plassene kommer fra PLS-en, så den trenger ingen layoutfil. Se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en) |
 | `adapters/binary-adapter.js` | Forbindelsen til en PLS med KjoreverkLink-blokken: gjør de faste blokkene fra S7-1200 (OUC over TCP) om til navngitte tagger, og sender kommandoene tilbake. Konfigureres med en layoutfil, redigeres aldri. Se [Pakket binærdata](#pakket-binærdata) |
 | `adapters/tcp-bridge.js` | En generell bro for enheter som sender JSON-linjer over rå TCP. PLS-en bruker den ikke; bruken står øverst i filen |
 | `README.md` | Denne filen |
-| `docs/` | `CALCULATIONS.md` (referansen for beregninger og betingelser), `DATABASE-BROWSER.md` (databaseleseren, og recorderens database tabell for tabell), arkitekturdiagrammene, og skriptene som tegner dem (`docs/src/`) |
+| `docs/` | `CALCULATIONS.md` (referansen for beregninger og betingelser), `PLAN.md` (planen for en sentral database), arkitekturdiagrammene, og skriptene som tegner dem (`docs/src/`) |
 
 Når det kommer en nyere versjon av kjernen, bytter du ut disse filene og kjører
 `npm install`. Prosjektfilene dine blir ikke rørt, så lenge de ligger utenfor kjernemappen
@@ -196,7 +186,7 @@ erstattet sammen med kjernen.
 |---|---|---|
 | `hmi.json` | Prosjektet: skjermbilder, widgeter, koblinger til tagger, variabler, beregninger | I HMI-editoren (Save). Det går an å redigere for hånd, se [12.3](#123-prosjektfilen) |
 | `codes.json` | Tekster og beskrivelser for feil- og alarmkoder | *Code texts* i HMI-en, lagres med en gang, også fra Run-modus (se [Kodetekster](#kodetekster-feilkoder-og-alarmkoder)) |
-| `tagnames.json` | Dine egne navn og beskrivelser for tagger (`kv_1.bit05` = *Dør lukket*) | **Tag names** i databaseleseren, eller **✎ Name tags** i tagoversikten i HMI-en, lagres med en gang (se [Tagnavn](#tagnavn-dine-egne-navn-på-tagger)) |
+| `tagnames.json` | Dine egne navn og beskrivelser for tagger (`kv_1.bit05` = *Dør lukket*) | **✎ Name tags** i tagoversikten i HMI-en (**☰ Data-list**), lagres med en gang (se [Tagnavn](#tagnavn-dine-egne-navn-på-tagger)) |
 | `assets/*.svg` | Tegninger for Drawing-widgeter | Tegneprogrammet ditt; last opp i HMI-en |
 | `assets/*.js` | Three.js-kode for Animation-widgeter | Kodeeditoren i HMI-en, eller en hvilken som helst teksteditor |
 | `assets/*.glb`, `.gltf`, `.bin`, bilder | 3D-modeller og teksturer som animasjonene bruker | Kopier dem inn i mappen |
@@ -303,35 +293,41 @@ En PLS sender dataene sine som posisjoner: `bit00` … `bit63`, `ints_1`, `cmd_b
 stedet for å endre PLS-programmet for å gi dem mening, gir du her hver tag ditt eget **navn**
 og din egen **beskrivelse**, f.eks. `kv_1.bit05` = *Dør lukket*, *endebryter B12, venstre dør*.
 
-Taggen beholder navnet sitt. Skjermbilder, lagringsregler og lagret historikk forblir som de
-er, og et navn kan endres når som helst uten nedlasting til PLS-en.
+Taggen beholder navnet sitt. Skjermbilder, beregninger og historikk forblir som de er, og et
+navn kan endres når som helst uten nedlasting til PLS-en.
 
-- **Sette dem:**
-  - **Tag names** i databaseleseren viser alle tagger med live-verdien. En verdi som endrer
-    seg, blinker, så du finner en bit ved å få den til å endre seg.
-  - I HMI-en (Edit-modus): **✎ Name tags** i tagoversikten (**☰ Data-list** i topplinjen).
-
-  Begge lagrer med en gang, uten Save av prosjektet.
+- **Sette dem:** **✎ Name tags** i tagoversikten i HMI-en (Edit-modus, **☰ Data-list** i
+  topplinjen). Et klikk på en tag åpner navnet og beskrivelsen dens. Det lagres med en gang,
+  uten Save av prosjektet, og hver HMI får endringen med en gang.
 - **Hvor de vises:**
   - tagoversikten og trendforklaringene i HMI-en;
   - etiketten til en widget, når du velger en navngitt tag for en widget som fortsatt har
-    standardetiketten sin;
-  - databaseleseren;
-  - recorderens database (`tag.label`, `tag.info`).
+    standardetiketten sin.
 - **Hvor de lagres:** huben har dem i `tagnames.json`, ved siden av prosjektfilen.
 - **Prosjektvariabler:** med `kv = kv_1` lagres et navn for `kv_1.bit05` som
   `${kv}.bit05`, så et annet kjøretøy (`kv = kv_2`) får de samme navnene for sine egne tagger.
+- **Tomt navn og tom beskrivelse** fjerner navnet.
 
 **Navn fra PLS-en.** Med TcpLink-blokken ligger navnene i PLS-en (`LinkNames`), og
 `tcplink-adapter.js` gir hver tag navnet den har der, med enheten fra en `[...]` til slutt
 i navnet. Da trenger du ikke navngi noe her. Navnet fra PLS-en kommer på nytt ved hver
 tilkobling og lagres ikke i `tagnames.json`. Gir du en tag ditt eget navn, går det foran;
-tøm feltet, så vises navnet fra PLS-en igjen. Tagoversikten og databaseleseren viser navnet
-fra PLS-en som forslag i navnefeltet. Se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en).
+tøm feltet, så vises navnet fra PLS-en igjen. Tagoversikten viser navnet fra PLS-en som
+forslag i navnefeltet. Se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en).
 
 Layoutfilens `description` for et felt (f.eks. *ZSW1*) vises ved siden av, som det
-enheten selv sier. [docs/DATABASE-BROWSER.md](docs/DATABASE-BROWSER.md#5-tagnavn-dine-egne-navn-på-tagger)
-har detaljene og filformatet.
+enheten selv sier.
+
+Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 sekunder):
+
+```json
+{
+  "tags": {
+    "${kv}.bit05": { "name": "Dør lukket", "info": "Endebryter B12, venstre dør", "updated": 1790630666358 },
+    "${kv}.speedAct": { "name": "Motorturtall", "info": "normalisert, 16#4000 = p2000" }
+  }
+}
+```
 
 ---
 
@@ -426,7 +422,7 @@ har detaljene og filformatet.
 | Button | 1 tag | en hvilken som helst verdi | Verdi ved trykk; valgfri verdi ved slipp (momentan); *Repeat while held* for hold-for-å-kjøre, se [13](#13-sikkerhet). Blir grå når enheten er frakoblet. [Sikrere betjening](#sikrere-betjening) |
 | Slider | 1 tag | tall | Skriver når du slipper. [Sikrere betjening](#sikrere-betjening) |
 | Number input | 1 tag | tall | Skriv inn en verdi, trykk Set. [Sikrere betjening](#sikrere-betjening) |
-| Trend | opptil 3 tagger | — | Et tidsrom fra minutter til uker, fra recorderen; tidsknapper og en markør i Run-modus; fast eller automatisk skala, én farge per linje. Se [Trender](#trender-over-timer-og-dager) |
+| Trend | opptil 3 tagger | — | Et tidsrom fra minutter til uker; tidsknapper og en markør i Run-modus; fast eller automatisk skala, én farge per linje. Se [Trender](#trender-over-timer-og-dager) |
 | Event log | hendelser | — | Filtrer på kildeprefiks og laveste alvorlighetsgrad |
 | Alarm list | alarmer | — | De aktive og ukvitterte alarmene, med Ack; filtrer på kilde og alvorlighetsgrad. Se [Alarmer](#alarmer-og-kvittering) |
 | Drawing | mange tagger | mange tagger | En SVG med en koblingstabell — se [9](#9-tegninger-svg) |
@@ -500,8 +496,7 @@ En alarm blir stående i listen til den **både** har gått bort og er kvittert:
 | Cleared · not acknowledged | Den gikk bort før noen så den |
 
 **Ack** kvitterer én alarm, **Acknowledge all** alle i listen. At en alarm kommer, går bort
-og blir kvittert, havner i hendelsesloggen (og dermed i recorderens database), sammen med
-hvilken HMI som kvitterte. Alarmer fra et kodefelt (se [Kodetekster](#kodetekster-feilkoder-og-alarmkoder))
+og blir kvittert, havner i hendelsesloggen, sammen med hvilken HMI som kvitterte. Alarmer fra et kodefelt (se [Kodetekster](#kodetekster-feilkoder-og-alarmkoder))
 har en ⓘ som åpner beskrivelsen av koden.
 
 **Hvor alarmene kommer fra:**
@@ -575,14 +570,11 @@ starter.
 - **Markøren:** pek på trenden for å lese tiden og verdien til hver linje der.
 - **Hvor punktene kommer fra:**
   - **Huben:** den har de siste minuttene av hver tag i minnet.
-  - **Recorderen:** den svarer for alt som er eldre, fra databasen sin (se
-    [8](#8-lagring-til-database)).
-  - **Bare lagrede tagger har historikk:** en trend av en tag uten lagringsregel sier fra om
-    det, og viser det huben har.
-  - **Uten at recorderen kjører:** bare minuttene i huben, og trenden sier fra om det også.
+  - **Alt som er eldre:** bare fra en database som er koblet til huben (se
+    [8](#8-lagring-til-database)). Uten den viser trenden det huben har, og sier fra om det.
 - **Hvordan den tegnes:**
-  - **Trinn:** verdier holdes til de endrer seg, slik recorderen lagrer dem, så en bit som
-    endret seg to ganger på et døgn, blir to trinn, ikke en skråning.
+  - **Trinn:** verdier holdes til de endrer seg, så en bit som endret seg to ganger på et
+    døgn, blir to trinn, ikke en skråning.
   - **Hull:** der en enhet var frakoblet.
   - **Topper:** i lange tidsrom dekker hvert punkt en periode og tar vare på laveste og
     høyeste verdi, så en kort topp vises fortsatt over en uke.
@@ -705,251 +697,30 @@ seg fortere enn drivet kan rampe) og en betingelse som holder seg (`calc.kv_crui
 ### Lagring av beregnede verdier
 
 Beregninger kjører i huben, ikke i nettleseren, så de fortsetter å gi verdier selv om alle
-nettlesere er lukket. Recorderen ([8](#8-lagring-til-database)) lagrer `calc.*`-tagger som
-alle andre tagger.
+nettlesere er lukket. En database som kobles til huben ([8](#8-lagring-til-database)), får
+`calc.*`-taggene som alle andre tagger.
 
 ---
 
 ## 8. Lagring til database
 
-`recorder.js` lagrer taggene og hendelsene du velger, i en SQLite-database på Pi-en. Den
-trenger **Node.js 22.13 eller nyere**, for den innebygde SQLite-en i Node. Huben og adapterne
-kjører fortsatt på Node 10 og nyere.
+Det finnes ingen database ennå. Det huben vet, ligger i minnet og forsvinner ved en omstart:
 
-```bash
-node recorder.js                               # ved siden av hub.js og adapterne
-node recorder.js --db /data/recorder.db        # eller med databasen et annet sted
-```
+- **Tagverdier:** de siste 600 punktene for hver numeriske tag (`HMI_HISTORY` endrer tallet,
+  se [12.4](#124-kommandolinje)). Trender viser derfor bare de siste minuttene.
+- **Hendelser:** de siste 200, og alarmlisten.
 
-Uten `--db` er databasen `data/recorder.db` inne i `hmi-core`, og recorderen lager den
-første gang. På en Pi med skrivebeskyttet system (overlay-filsystemet) gir du den et sted på
-den skrivbare datadisken.
+**En database kobles til huben som et eget program,** gjerne på en annen maskin. Det bruker
+den vanlige WebSocket-protokollen ([12.1](#121-websocket-protokoll)):
 
-**Hva som lagres**, stilles inn i databaseleseren (`node db-browser.js`, se
-[Se gjennom databasen](#se-gjennom-databasen)) under **Recording**, ved siden av hvor mye
-hver tag lagrer.
+- **For å få verdiene og hendelsene:** koble til som en skrivebeskyttet HMI
+  (`{"type":"hello","role":"hmi","readonly":true}`) og abonner på `*`.
+- **For å svare trendene:** koble til som en adapter med `"serves":["history"]` i `hello`.
+  Ber en trend om et tidsrom som er eldre enn hubens minne, sender huben programmet en
+  `query`, og det svarer med `queryResult`. Svarer det ikke innen 20 sekunder, viser trenden
+  det huben har.
 
-- **Hvor reglene ligger:** i en egen fil ved siden av databasen: `data/recorder.db` har
-  `data/recorder.rules.json`. Reglene hører til databasen, ikke til prosjektet, så de står
-  ikke i `hmi.json`.
-- **Når de trer i kraft:** recorderen leser filen på nytt innen 2 sekunder etter en endring.
-  Ingen omstart trengs, og siden sier fra når recorderen har tatt i bruk de nye reglene.
-- **Redigere for hånd:** filen er ren JSON, så du kan også redigere den i en teksteditor.
-- **Eldre prosjekter** hadde reglene under `"record"` i `hmi.json`: recorderen kopierer dem
-  til regelfilen første gang den starter, når regelfilen ikke finnes ennå. Etterpå brukes
-  `"record"` ikke lenger, og kan slettes fra `hmi.json`.
-
-### Recording-siden
-
-- **Hva som lagres, per tag:**
-  - hvor mange verdier hver tag lagret den siste timen og de siste 24 timene;
-  - hva det betyr i MB per dag, og taggens andel av databasen;
-  - regelen som lagrer den.
-
-  De tyngste taggene kommer først, så de som lagres for ofte, skiller seg ut. **Rule…** ved
-  siden av en tag bestemmer hvordan den taggen lagres: den lager en regel bare for den,
-  plassert først så den bestemmer.
-- **Regler:** i rekkefølge, med hvilke tagger hver regel fanger, og hvilke den ville ha fanget,
-  men som en tidligere regel tar først.
-  - **Redigere:** **↑ ↓** flytter en regel, og **+ Add rule** legger til en på slutten.
-    Endringene er et utkast til du trykker **Save rules**.
-  - **Estimate with the last hour:** spiller den siste timen med lagrede verdier for en tag
-    gjennom regelen du redigerer, og sier hvor mange den ville ha lagret. Tallet er nøyaktig
-    når regelen som er i bruk, lagrer hver endring, og for lavt når den regelen allerede
-    utelater verdier.
-- **Innstillinger:** hvor ofte det skal skrives, hvor lenge data skal beholdes,
-  størrelsesgrensen, hendelser.
-
-### Innstillinger
-
-| Innstilling | Standard | Virkning |
-|---|---|---|
-| Write to the SD card every | 30 s | Verdiene venter i RAM og skrives i én transaksjon. Færre skrivinger skåner SD-kortet; et strømbrudd mister høyst så mye. En vanlig stopp skriver alt først. |
-| Keep for | 7 dager | Eldre data slettes |
-| Size limit | 1000 MB | Over dette slettes de eldste dataene, og en advarselshendelse sier fra når til når |
-| Record events | på | Alarmer, advarsler og meldinger, også hendelsene fra beregningene |
-
-### Regler
-
-Bare tagger som en regel fanger, blir lagret. Den **første regelen som fanger en tag**,
-bestemmer for den, så sett spesifikke regler over generelle. En verdi som ikke har endret
-seg, lagres aldri to ganger, uansett regel.
-
-**Hvilke tagger:** navn adskilt med komma. `*` matcher hva som helst: `${kv}.bit0*` er bit00
-til bit09, og `calc.*` er alle beregninger. Prosjektvariabler virker som ellers.
-
-**Hva som skal lagres**, ett av tre:
-
-| | Lagrer | Bruk det til |
-|---|---|---|
-| **Each change** | en ny verdi når den har endret seg, finjustert med innstillingene nedenfor | de fleste tagger |
-| **At a fixed interval** | siste verdi med *N* sekunders mellomrom, endret eller ikke | en langsom verdi der et jevnlig punkt er nok: en temperatur hvert minutt |
-| **Nothing** | ingenting: taggene ignoreres | ledige signaler, plassert over en bredere regel som `${kv}.*` |
-
-**Each change** kan finjusteres; et tomt felt er av:
-
-| Innstilling | Virkning |
-|---|---|
-| **Smallest change** | Et tall lagres bare når det har flyttet seg minst så mye siden forrige lagrede verdi: `30` for 30 (i taggens måleenhet), eller `2%` for to prosent av den verdien. Små svingninger utelates |
-| **Bits** | For status- og styreord: bare de valgte bitene teller (`0-7, 11`), eller alle unntatt de valgte (`8, 10`). Et ord med én bit som flimrer, lagres da bare når en bit som betyr noe, endrer seg |
-| **At most one value per** | Høyst én lagret verdi per så mange sekunder. Den siste verdien lagres likevel når tiden er ute, så den endelige verdien går aldri tapt |
-| **Store again after** | Verdien lagres på nytt etter så mange sekunder selv om ingenting har endret seg, så også en lang stabil periode har punkter |
-| **Flicker** | Mer enn *N* endringer innen *T* sekunder: slutt å lagre hver endring. Én hendelse sier at taggen flimrer; når den har roet seg, lagres den endelige verdien, med en hendelse som sier hvor mange endringer over hvor lang tid |
-
-Uansett regel (unntatt *Nothing*) lagres en tags **første verdi** og hver **endring av
-kvalitet** (for eksempel når PLS-forbindelsen blir foreldet).
-
-Eksempler på regler:
-
-| Tagger | Innstillinger | Hvorfor |
-|---|---|---|
-| `${kv}.cmd_*` | ingenting | Kommandoene HMI-en sender; svaret fra PLS-en lagres i stedet |
-| `${kv}.speedAct, ${kv}.torqueAct` | minste endring 2%, høyst én per 1 s, på nytt etter 60 s | Svingninger utelates, ekte endringer beholdes, og ett punkt i minuttet når verdien er stabil |
-| `${kv}.statusWord` | hver endring, alle biter unntatt 8 og 10 | De to flimrer mens drivet går |
-| `${kv}.dints_0` | minste endring 1000, høyst én per 5 s | Strekning i mm: hver meter |
-| `${kv}.ints_1` | hvert 60. sekund | Temperatur: ett punkt i minuttet er rikelig |
-| `${kv}.faultCode, ${kv}.warnCode, ${kv}.link` | hver endring | Hver feil, advarsel og hvert brudd i forbindelsen |
-| `${kv}.bit00, ${kv}.bit01, ${kv}.bit02, ${kv}.bit06` | flimring: mer enn 6 på 2 s | Signalene som er i bruk; de ledige bitene får ingen regel |
-
-### Pause lagringen
-
-Under vedlikehold eller tester stopper **⏸ Pause recording…** på Recording-siden recorderen
-fra å lagre, så testverdier ikke blandes med ekte verdier.
-
-- **What:** alle tagger, eller bare noen, f.eks. ett kjøretøy (`kv_1.*`).
-- **For:** 15 minutter til 24 timer, eller til du gjenopptar lagringen.
-- **Why:** valgfritt; det havner i hendelsesloggen.
-
-Mens pausen er på:
-- **Hva som stopper:** de pausede taggene lagres ikke, og det gjør heller ikke hendelsene og
-  alarmene fra de pausede enhetene.
-- **I databasen:** hver tag får ett merke (kvalitet 3, *paused*) der pausen begynner, så
-  trendene viser et hull. Når pausen slutter, lagres verdien hver tag har i det øyeblikket.
-- **Hvor det vises:** **⏸ Recording paused** i topplinjen i HMI-en (også i Run-modus) og på
-  alle sidene i databaseleseren.
-- **Omstarter:** pausen lagres i `recorder.rules.json`, så den overlever en omstart.
-
-**+30 min**, **+1 h**, **No end** og **▶ Resume now** endrer den. Se
-[docs/DATABASE-BROWSER.md](docs/DATABASE-BROWSER.md#4-pause-lagringen).
-
-### Status og hvordan du sjekker hva som lagres
-
-Recorderen publiserer tilstanden sin som tagger, som vises på Recording-siden, i
-tagoversikten og i en hvilken som helst widget:
-
-| Tag | Betydning |
-|---|---|
-| `rec.buffered` | Verdier som venter i RAM på neste skriving |
-| `rec.last_write` | Når siste skriving skjedde |
-| `rec.stored`, `rec.db_mb` | Verdier i databasen, og størrelsen på den |
-| `rec.recorded_tags` | Tagger som en regel fanger |
-| `rec.flickering` | Tagger som holdes tilbake nå fordi de flimrer |
-| `rec.mb_per_day` | Forventet vekst med takten fra de siste 10 minuttene |
-| `rec.rules_at` | Når recorderen lastet inn reglene den bruker |
-| `rec.paused` | Pauser som er på nå; 0 når det lagres slik reglene sier |
-| `rec.pause_text` | Hva som er pauset, til når, og hvorfor |
-
-Hvis recorderen stopper, blir disse foreldet, og det merkes med en gang.
-
-Fra en terminal på Pi-en:
-
-```bash
-node recorder.js --db /data/recorder.db --info                               # størrelse, rader, tidsrom
-node recorder.js --db /data/recorder.db --query "kv_1.speedAct, calc.*" --minutes 30   # CSV
-node recorder.js --db /data/recorder.db --events --minutes 120              # CSV
-```
-
-### Inne i databasen
-
-En lagret verdi tar omtrent 47 byte, medregnet indeksen som gjør trendene raske, så 40
-verdier i sekundet, kontinuerlig, blir omtrent 160 MB per dag. Med dødbånd og intervaller er
-det vanligvis langt mindre.
-
-| Tabell | Inneholder |
-|---|---|
-| `sample` | Én rad per lagret verdi: tid, tag, verdi (eller tekst), kvalitet. Indeksert på tag, for trender |
-| `rollup` | Laveste og høyeste verdi for hver tag per minutt, oppdatert ved hver skriving, så en trend over flere dager leser én rad per minutt i stedet for hver verdi |
-| `event` | Alarmer, advarsler og meldinger |
-| `tag` | Tagnavn (radene viser til dem med nummer), med ditt eget navn og din egen beskrivelse for hver (`label`, `info`) |
-| `batch` | Én rad per skriving: hvilke rader den inneholder. Sletting av gamle data sletter hele skrivinger, de eldste først. |
-| `boot`, `meta` | Hver oppstart av Pi-en, og en tilfeldig id for denne databasefilen |
-
-Alle tabeller og kolonner er forklart i
-[docs/DATABASE-BROWSER.md](docs/DATABASE-BROWSER.md#9-recorderens-database), med eksempler på
-spørringer.
-
-**Trender fra recorderen:** recorderen svarer på spørsmålene fra trendene gjennom huben.
-Målt på en uke med én verdi i sekundet for to tagger, blant 2.4 millioner rader totalt, tok
-en trend over en uke 37 ms på en PC; regn med flere ganger det på en Pi. En database fra en
-eldre recorder får indeksen og minuttsammendraget første gang den nye recorderen åpner den:
-det tar litt tid på en stor database, én gang, og recorderen sier fra om det i loggen sin.
-
-Hver rad lagrer også oppstarten (boot) og tiden siden oppstart, ved siden av klokketiden på
-Pi-en, så tidsstempler kan rettes når riktig tid er kjent (for eksempel fra en sentral
-server). Huben, adapterne og recorderen måler tidsrom med en klokke som aldri hopper, så det
-forstyrrer dem ikke at klokken på Pi-en stilles mens de kjører.
-
-### Se gjennom databasen
-
-`db-browser.js` viser databasen i en nettleser: alle tabeller, én side om gangen, med lesbare
-tagnavn og tider, og en SQL-boks. Den følger med `hmi-core` og bruker den innebygde SQLite-en
-i Node og ingen npm-pakker, så på en Pi uten internett er det ingenting å installere: kopier
-`hmi-core` som vanlig. Den trenger Node.js 22.13 eller nyere, som recorderen.
-
-```bash
-node db-browser.js                           # recorderens database, på det vanlige stedet
-node db-browser.js --db /data/recorder.db    # eller der du ba recorderen legge den
-```
-
-Åpne så `http://<pi-address>:8088`; `hostname -I` på Pi-en viser adressen. Recorderen lager
-databasen første gang den starter, så start recorderen én gang før databaseleseren.
-
-| Valg | Virkning |
-|---|---|
-| `--db <file>` | Databasen. Standard er `data/recorder.db`, recorderens egen standard. En hvilken som helst SQLite-fil virker |
-| `--port <n>` | Webporten. Standard 8088 |
-| `--write` | Tillat endringer: rader, tabeller og indekser. Uten dette valget åpnes databasen skrivebeskyttet, og ingenting du skriver noe sted, kan endre den |
-| `--local` | Bare Pi-en selv kan åpne siden |
-| `--hub <url>` | Hvor huben er, for taglisten og recorderens status på Recording-siden. Standard: denne datamaskinen, port 8080 |
-
-**Hva den viser:**
-- **Recording:** hva recorderen lagrer, hvor mye av hver tag, reglene som bestemmer det, og
-  pause av lagringen (se [8](#8-lagring-til-database)). Å sette regler og pause virker uten
-  `--write`: de ligger i en egen fil, ikke i databasen.
-- **Tag names:** ditt eget navn og din egen beskrivelse for hver tag (se
-  [Tagnavn](#tagnavn-dine-egne-navn-på-tagger)). Trenger huben, som tar vare på dem.
-- **Tables:** rader én side om gangen, nyeste først; klikk på en kolonne for å sortere.
-  - **Filtrere:** med en SQL-betingelse som `value > 1000 AND q = 0`, eller, for
-    recorderens tabeller, ved å velge en tag og et tidsrom.
-  - **Readable values** (lesbare verdier): tider, tagnavn og kvalitet vises med ord; pek på en
-    av dem for å se den lagrede verdien.
-- **En rad:** klikk på den for å se hele raden; med `--write` også for å endre eller slette den.
-- **Structure:** kolonner, indekser og `CREATE`-setningen.
-- **SQL:** alt SQLite forstår, med eksempler for recorderens data (verdiene til en tag,
-  høyeste og laveste per time, alarmer, når en tag var foreldet, plass per tabell). Høyst 1000
-  rader kommer tilbake, og den sier fra når det var flere.
-- **Export CSV:** alle rader som passer med filteret, med lesbare kolonner lagt til. Filen
-  skrives etter hvert som radene leses, så millioner av rader går også.
-- **Back up:** en konsistent kopi av hele databasen, ved siden av den, også mens recorderen
-  skriver. Den trenger like mye ledig plass til.
-- **Manage og New table** (med `--write`): gi en tabell nytt navn, legg til, gi nytt navn og
-  fjern kolonner, legg til og fjern indekser, tøm eller slett en tabell, og lag nye egne
-  tabeller.
-  - **SQL-en vises først:** hver endring viser SQL-en den skal kjøre.
-  - **Å tømme eller slette en tabell** krever at du skriver navnet på tabellen.
-
-**Ved siden av recorderen:**
-- **Det er trygt å bla skrivebeskyttet mens den lagrer:** SQLite lar recorderen skrive og
-  databaseleseren lese samtidig.
-- **Recorderens egne tabeller** (`sample`, `rollup`, `batch`, `tag`, `event`, `boot`, `meta`)
-  må beholde formen sin. Å endre dem kan stoppe lagringen. Slik endrer du dem:
-  1. Stopp recorderen.
-  2. Trykk **Back up**.
-  3. Start databaseleseren med `--write`.
-- **Dine egne tabeller** i den samme databasen kan trygt endres mens den lagrer.
-- **Sikkerhet:** som huben har den ingen innlogging. Alle som når porten, kan lese databasen,
-  og med `--write` også endre den. Bruk `--write` bare mens du trenger det, eller legg til
-  `--local`.
+Planen for en sentral database står i [docs/PLAN.md](docs/PLAN.md).
 
 ---
 
@@ -1197,11 +968,11 @@ PLC*), `kv_1.rx_gaps` (hopp i sekvensnummeret), `kv_1.ts` (PLS-klokka) og
   words og times beholder hele teksten, som i klientene i PLS-prosjektet.
 - **Plasser uten navn** registreres også, med bare plassnavnet (`kv_1.bit05`). **With a name**
   i tagoversikten viser bare de navngitte.
-- **Hvorfor taggen ikke heter det samme som navnet:** skjermbilder, beregninger,
-  lagringsregler og lagret historikk peker på taggen. Gir du en plass et nytt navn i PLS-en,
+- **Hvorfor taggen ikke heter det samme som navnet:** skjermbilder, beregninger og historikk
+  peker på taggen. Gir du en plass et nytt navn i PLS-en,
   byttes bare navnet som vises, og ingenting mister koblingen sin. Flytter du et signal til en
   annen plass, må du flytte det i HMI-en også.
-- **Ditt eget navn går foran.** Et navn du gir en tag i HMI-en eller databaseleseren
+- **Ditt eget navn går foran.** Et navn du gir en tag i HMI-en
   ([Tagnavn](#tagnavn-dine-egne-navn-på-tagger)), vises i stedet for navnet fra PLS-en. Tøm
   det, så kommer navnet fra PLS-en tilbake.
 
@@ -1261,7 +1032,7 @@ betyr det samme som før. Dette flytter seg:
 | `kv_1.words_0` … `words_3` | `kv_1.words_4` … `words_7` |
 | `kv_1.lastDriveTime`, `lastDriveTime_age` | `kv_1.times_0`, `times_0_age` |
 
-Beregninger og lagringsregler som bruker taggene i venstre kolonne, må endres. ZSW1-bitene
+Beregninger og skjermbilder som bruker taggene i venstre kolonne, må endres. ZSW1-bitene
 (`kv_1.zsw1_enabled` …) heter det samme, fra innstillingsfilen. Stopp `binary-adapter.js`
 før du starter `tcplink-adapter.js`: PLS-en tar imot én klient.
 
@@ -1431,9 +1202,11 @@ uplink-format 5 (112 byte, magic 16#A5) og downlink-format 1 (46 byte, magic 16#
   `ts`, så PC-klokka spiller ingen rolle. Logikken din må skrive `lastDriveTime` med samme
   klokke som FB-en (RD_SYS_T, UTC, med mindre `useLocalTime` er satt).
 
-Hastighet, moment og effekt regnes ut som beregninger i prosjektet (`calc.kv_speed_rpm`,
-`calc.kv_torque_nm`, `calc.kv_power_w`): 16#4000 = p2000 for hastighet, 16#4000 = p2003 for
-moment. Sjekk begge parameterne på drivet.
+Hastighet og moment kommer som normaliserte tall: 16#4000 = p2000 for hastighet, 16#4000 =
+p2003 for moment. Beregningene i prosjektet er satt opp for TcpLink, som sender dem i rpm og
+Nm. Med KjoreverkLink skriver du `calc.kv_speed_rpm` og `calc.kv_torque_nm` om til
+`${kv}.speedAct / 16384 * 3000` og `${kv}.torqueAct / 16384 * 1.0`, med p2000 og p2003 fra
+drivet ditt. `calc.kv_power_w` og de andre bruker disse to og trenger ingen endring.
 
 ### Andre enheter og programmer
 
@@ -1475,8 +1248,8 @@ forbindelse; `hello` sier hvilken av dem det er. Eksempeladapterne i
 | `{"type":"unsubscribe","tags":[...]}` | hmi | Slutt å motta dem |
 | `{"type":"write","tag":"kv_1.cmd_bit00","value":true}` | hmi | Be adapteren som eier taggen, om å endre noe |
 | `{"type":"ack","keys":["tag:kv_1.faultCode"]}` eller `{"type":"ack","all":true}` | hmi | Kvitter alarmer (ikke fra skrivebeskyttede HMI-er) |
-| `{"type":"historyRange","id":1,"tags":[...],"from":ms,"to":ms,"points":800}` | hmi | Punkter for et tidsrom, til en trend: fra hubens minne, eller sendt videre til recorderen |
-| `{"type":"queryResult","id","series","unrecorded"}` | recorder | Svaret på en `query` |
+| `{"type":"historyRange","id":1,"tags":[...],"from":ms,"to":ms,"points":800}` | hmi | Punkter for et tidsrom, til en trend: fra hubens minne, eller sendt videre til en database (`query`) |
+| `{"type":"queryResult","id","series","unrecorded"}` | adapter med `serves` | Svaret på en `query`. `unrecorded`: tagger databasen ikke har |
 | `{"type":"history","tag":"kv_1.speedAct"}` | hmi | De siste 600 punktene |
 | `{"type":"checkCalc","id":1,"formula":"...","vars":{}}` | hmi | Sjekk en formel. Svaret er `calcCheck` |
 | `{"type":"list"}` / `{"type":"ping"}` | begge | Tagliste / keep-alive |
@@ -1493,7 +1266,7 @@ forbindelse; `hello` sier hvilken av dem det er. Eksempeladapterne i
 | `{"type":"write","tag","value","from"}` | adapter | En videresendt skriving: utfør den, og send så en `update` |
 | `{"type":"alarms","alarms":[{"key","source","severity","text","active","acked","since",...}]}` | hmi | Alarmlisten; sendes ved hello og etter hver endring |
 | `{"type":"historyRange","id","series":{"tag":[[ts,value],...]},"source","note"}` | hmi | Svar på historyRange. `null` som verdi er et hull (stale) |
-| `{"type":"query","id","tags","from","to","points"}` | recorder | Spørsmålet fra en trend, til en adapter som sa `"serves":["history"]` i sin hello |
+| `{"type":"query","id","tags","from","to","points"}` | adapter med `serves` | Spørsmålet fra en trend, til en adapter som sa `"serves":["history"]` i sin hello |
 | `{"type":"calcCheck","id","ok","error","pos","deps","unknown","value"}` | hmi | Svar på checkCalc |
 | `{"type":"codes","codes":{"lists":{...}},"error"}` | hmi | Kodetekstene; sendes ved hello og etter hver endring |
 | `{"type":"error","message"}` / `{"type":"pong"}` | begge | Noe var galt med forrige melding / keep-alive |
@@ -1542,7 +1315,7 @@ Navn på assets kan bruke bokstaver, sifre, `_`, `.` og `-`, med filtypene `.svg
     ] }
   ],
   "calcs": [
-    { "name": "kv_speed_rpm", "formula": "${kv}.speedAct / 16384 * 3000", "unit": "rpm", "decimals": 0, "type": "number" }
+    { "name": "kv_speed_rpm", "formula": "${kv}.reals_0", "unit": "rpm", "decimals": 0, "type": "number" }
   ]
 }
 ```
@@ -1622,11 +1395,12 @@ kan ikke merke det, fordi adapteren holder forbindelsen sin i live. Tre ledd tet
    hvert 200 ms. Mister vinduet fokus, skjules fanen eller forlater du siden, slippes alle
    holdte knapper med en gang.
 2. **Adapteren slipper biten når gjentakelsene stopper.** Sett `"hold": 600` for den biten i
-   layouten. Når biten har falt, forblir den av til HMI-en sender et slipp, så trykk som ligger
-   bufret i en død forbindelse, ikke kan starte noe på nytt når de til slutt kommer fram. En
+   innstillingsfilen (`tcplink-adapter.js`) eller layouten (`binary-adapter.js`). Når biten
+   har falt, forblir den av til HMI-en sender et slipp, så trykk som ligger bufret i en død
+   forbindelse, ikke kan starte noe på nytt når de til slutt kommer fram. En
    advarselshendelse sier hva som skjedde.
-3. **PLS-en stopper av seg selv når adapteren blir stille.** For eksempel nullstiller
-   `KjoreverkLink` alle kommandoer etter sin `cmdTimeout`.
+3. **PLS-en stopper av seg selv når adapteren blir stille.** `TcpLink` nullstiller alt i `rx`
+   etter `rxTimeout` (2 s), og `KjoreverkLink` alle kommandoer etter sin `cmdTimeout`.
 
 Testet fra ende til ende mot en PLS-simulator under utviklingen: en side som frøs midt i et
 trykk, stoppet joggingen omtrent 600 ms etter siste trykk. Da den frosne siden våknet igjen, startet den ikke joggingen
@@ -1656,10 +1430,7 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | En del av en tegning skifter ikke farge | Formen har ikke fyll, så bruk *Paint: stroke* eller gi den fyll i tegningen. Eller ID-en er endret; koblingseditoren viser manglende deler i rødt |
 | En animasjon forblir tom | Åpne kodeeditoren og les konsollen. Vanlige årsaker: en import fra en URL, eller rendering et annet sted enn i `hmi.stage()` / `hmi.container` |
 | "three.js is not installed" | Kjør `npm install` i `hmi-core` |
-| En trend viser bare de siste minuttene | Trenden sier hvorfor: recorderen kjører ikke, eller taggen har ingen lagringsregel. Legg til en på databaseleserens Recording-side |
-| Databasen vokser fort | Databaseleserens Recording-side viser taggene som lagrer mest. Gi dem en minste endring, et intervall, eller *Nothing* |
-| Ingenting lagres, selv om reglene er riktige | En pause er aktiv: **⏸ Recording paused** i topplinjen. Gjenoppta lagringen på Recording-siden, eller vent til pausen er slutt |
-| Tagnavn kan ikke lagres i databaseleseren | Det er huben som tar vare på dem: start den, eller gi databaseleseren adressen dens med `--hub` |
+| En trend viser bare de siste minuttene | Huben har bare de siste minuttene i minnet, og ingen database er koblet til. Se [8](#8-lagring-til-database) |
 | Et betjeningselement er grået ut | *Enabled when*-betingelsen er ikke oppfylt (hold musepekeren over for å se hvilken), eller enheten er frakoblet (etiketten sier *stale*) |
 | En alarm kommer tilbake hvert sekund | Verdien ligger og vipper ved grensen. Gi den hysterese i PLS-en, eller en `delay` i alarmen |
 | En alarm blir stående i listen | Den venter på kvittering, eller den er fortsatt aktiv. Bare alarmer som er både borte *og* kvittert, forsvinner fra listen |

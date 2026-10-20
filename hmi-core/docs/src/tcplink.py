@@ -100,7 +100,7 @@ def build_hub(y):
     iw = HW - 32
     h = s.box(HX + 16, y, iw, 'kv_1.reals_0', [
         ('navn: Hastighet', CYAN), ('enhet: rpm', CYAN),
-        'Taggen er plassen og endres aldri: skjermbilder, beregninger, lagringsregler og historikk bruker den.'],
+        'Taggen er plassen og endres aldri: skjermbilder, beregninger og historikk bruker den.'],
         accent=AMBER, fill=PANEL2, title_size=14, mono_title=True)
     hub['tag'] = (y, h)
     y2 = y + h + 12
@@ -119,13 +119,11 @@ def build_hmi(y):
     iw = MW - 32
     h = s.box(MX + 16, y, iw, 'Tagoversikten', ['Navnet fra PLS-en ved hver tag. With a name viser bare de navngitte.'], accent=CYAN, fill=PANEL2, title_size=14)
     hmi['tags'] = (y, h)
-    y2 = y + h + 12
-    h2 = s.box(MX + 16, y2, iw, 'Databasen', ['Recorderen kopierer navnet til tag.label, så databasen forklarer seg selv.'], accent=AMBER, fill=PANEL2, title_size=14)
-    y3 = y2 + h2 + 12
+    y3 = y + h + 12
     h3 = s.box(MX + 16, y3, iw, 'Betjening', ['Knapper og brytere skriver til kv_1.cmd_*.'], accent=BLUE, fill=PANEL2, title_size=14)
     hmi['controls'] = (y3, h3)
     return y3 + h3
-hmi_h = framed(MX, MW, 'HMI-en', 'og databaseleseren', build_hmi)
+hmi_h = framed(MX, MW, 'HMI-en', 'i nettleseren', build_hmi)
 
 # ---------------------------------------------------------------- flyt mellom kolonnene
 def elbow(x1, y1, xm, y2, x2, color, dash=None):

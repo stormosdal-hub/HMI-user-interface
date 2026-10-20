@@ -105,11 +105,9 @@ s.arrow(HX + HW + 3, by - 7, BX - 3, by - 7, AMBER)
 s.arrow(BX - 3, by + 7, HX + HW + 3, by + 7, BLUE)
 s.add(s.text((HX + HW + BX) / 2, by - 20, 'update, tags', 12, AMBER, 500, 'middle'))
 s.add(s.text((HX + HW + BX) / 2, by + 32, 'write', 12, BLUE, 500, 'middle'))
-rec_y = TOP + bh + 30
-rh = s.box(BX, rec_y, BW, 'recorder.js', ['Lagrer også de nye taggene når en lagringsregel fanger dem (py_1.*, esp32_1.*).'], accent=AMBER, mono_title=True)
 
 # ---------------------------------------------------------------- hva du trenger
-NY = max(left_bottom, plc_y + ph, rec_y + rh) + 60
+NY = max(left_bottom, plc_y + ph) + 60
 s.add(s.text(48, NY, 'Hva hver av dem trenger', 20, INK, 600))
 needs = [
     ('ESP32', 'Arduino IDE med arduino-esp32 2.0.2 eller nyere, og bibliotekene WebSockets (Markus Sattler) og ArduinoJson 7.'),

@@ -36,8 +36,8 @@ tjeneste på Pi-en.
 
 - **Et navn som blir tagprefikset.** Adapteren kobler til som f.eks. `py_1`, og alle taggene
   dens heter `py_1.<noe>`. Navnet må være unikt på huben: to enheter med samme navn tar
-  taggene fra hverandre. Bruk bokstaver, sifre og `_`. `kv_1` er PLS-en, `calc` og `rec` er
-  tatt av huben og recorderen.
+  taggene fra hverandre. Bruk bokstaver, sifre og `_`. `kv_1` er PLS-en, og `calc` er tatt av
+  huben.
 - **Taggene registreres** med type (`number`, `boolean` eller `string`), måleenhet, om de er
   skrivbare, og verdien de har nå. Da finnes de i HMI-ens tagoversikt med en gang.
 - **Bare endrede verdier sendes.** Programmet kan kalle `set()` så ofte det vil; adapteren
@@ -359,10 +359,8 @@ Hele protokollen, også det HMI-ene bruker, står i avsnitt 12.1 i `README.md` i
   med live-verdier. Bind en widget til f.eks. `py_1.level` som til en PLS-tag.
 - **Prosjektvariabler:** med `dev = esp32_1` i prosjektinnstillingene kan widgeter bruke
   `${dev}.temp`, og et skjermbilde kan byttes til en annen enhet ved å endre variabelen.
-- **Lagre dem:** recorderen lagrer bare det en lagringsregel fanger. Legg til en regel for
-  f.eks. `py_1.*` på Recording-siden i databaseleseren.
-- **Egne navn:** gi taggene norske navn og beskrivelser under **Tag names** i
-  databaseleseren, eller **✎ Name tags** i HMI-en, som for PLS-taggene.
+- **Egne navn:** gi taggene norske navn og beskrivelser med **✎ Name tags** i HMI-en
+  (**☰ Data-list** i Edit-modus), som for PLS-taggene.
 - **Beregninger** kan bruke dem som alle andre tagger: `calc.*` kan f.eks. kombinere en
   ESP32-måling med en PLS-verdi.
 

@@ -5,7 +5,7 @@ betingelser, kontroller over tid og hendelsene de utløser.
 
 Beregninger settes opp i nettleseren, men **kjører i huben**. De fortsetter å gi verdier selv
 om alle nettlesere er lukket, alle HMI-er viser samme resultat, trender har historikk, og en
-recorder eller database kan lagre dem som en hvilken som helst annen tag.
+database kan lagre dem som en hvilken som helst annen tag.
 
 ## Innhold
 
@@ -321,8 +321,8 @@ Kilden til hendelsen er beregningens tag, for eksempel `calc.kv_crash`.
   holdes tilbake og slås sammen med neste hendelse, som "(2 more changes in the second
   before)". Sluttilstanden logges alltid, og blir aldri forkastet.
 - **Hvor hendelsene havner:** hendelser vises i hver Event log-widget og går til hver klient
-  av huben. En recorder eller database lagrer dem derfor sammen med taggene, slik at uønskede
-  tilstander kan søkes opp senere: løse kabler, kollisjoner, kjøring med feil.
+  av huben. En database som er koblet til huben, kan derfor lagre dem sammen med taggene, slik
+  at uønskede tilstander kan søkes opp senere: løse kabler, kollisjoner, kjøring med feil.
 
 For signaler som kan flimre av og på, legg til `held` eller `stretch`, så hver forekomst gir
 én tydelig hendelse, ikke en byge.

@@ -873,9 +873,6 @@ body.run .widget.has-codes .wbody:focus-visible { outline: 2px solid var(--edit)
 }
 .alarmbar-text { overflow: hidden; text-overflow: ellipsis; }
 .alarmbar-icon { font-size: 11px; }
-/* recorderen er pauset: bare en status, ingen lenke */
-.bar .recpause { background: transparent; border: 1px solid var(--warn); color: var(--warn); border-radius: var(--radius); padding: 4px 10px; font-size: 13px; white-space: nowrap; cursor: default; }
-.bar .recpause[hidden] { display: none; }
 .bar .alarmbar.none { background: transparent; border-color: transparent; color: var(--ink-3); }
 .bar .alarmbar.none .alarmbar-icon { display: none; }
 .bar .alarmbar.none:hover { border-color: var(--line); color: var(--ink-2); }

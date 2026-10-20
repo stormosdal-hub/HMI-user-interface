@@ -16,7 +16,7 @@
  *     på nytt ved neste tilkobling (eller på en flanke på resendNames)
  *
  * Taggen er plassen, og den endres aldri. Navnet er det som vises. Gir du en plass et nytt navn
- * i PLS-en, beholder skjermbilder, beregninger, lagringsregler og lagret historikk koblingen sin.
+ * i PLS-en, beholder skjermbilder, beregninger og historikk koblingen sin.
  * Et navn du selv gir en tag i HMI-en (tagnavn), går foran navnet fra PLS-en.
  *
  * Det PLS-en ikke kan si noe om (hvilken plass som er en feilkode med alarm, hvilken

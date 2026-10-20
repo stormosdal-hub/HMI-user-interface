@@ -427,7 +427,7 @@ function applyCodeChanges(codes, changes) {
 // { tags: { "${kv}.bit05": { name: "Dør lukket", info: "Endebryter B12, venstre dør", updated } } }
 // Ditt eget navn og din egen beskrivelse for en tag, i stedet for en endring i PLS-programmet:
 // taggen beholder navnet sitt, så skjermbilder, regler og lagret historikk forblir som de er, og
-// HMI-en, databaseleseren og recorderens database viser ditt. En egen fil ved siden av prosjektet,
+// HMI-en viser ditt. En egen fil ved siden av prosjektet,
 // som kodetekstene. Et navn lagret for kv_1.bit05 mens prosjektvariabelen kv = kv_1, lagres som
 // ${kv}.bit05, så det følger variabelen: et kjøretøy med kv = kv_2 får de samme navnene.
 let tagNames = new Map();   // tag (variabler satt inn) -> { name, info, key }
@@ -498,7 +498,7 @@ fs.watchFile(NAMES_PATH, { interval: 2000 }, (cur, prev) => {
 
 // ---------------------------------------------------------------- historikk for trender
 const HUB_START = now();
-const pendingQueries = new Map();   // spørrings-id -> { reply, timer }, mens recorderen jobber med den
+const pendingQueries = new Map();   // spørrings-id -> { reply, timer }, mens historikktjenesten jobber med den
 let querySeq = 0;
 // Minnet rekker langt nok tilbake når hver tags historikk starter før `from`, eller ikke har
 // gått full og huben startet før `from` (en tag som sjelden endres, har få punkter).
@@ -509,7 +509,7 @@ function memoryCovers(q) {
     return HUB_START <= q.from;
   });
 }
-// punktene i tidsrommet, med siste verdi før det først; tynnet ut som hos recorderen
+// punktene i tidsrommet, med siste verdi før det først; tynnet ut til høyst `points`
 function fromMemory(q) {
   const series = {};
   for (const name of q.tags) {
@@ -670,8 +670,8 @@ function handle(c, msg) {
     case 'hello': {
       c.role = msg.role === 'adapter' ? 'adapter' : 'hmi';
       c.name = String(msg.name || `${c.role}-${++clientSeq}`);
-      c.readonly = c.role === 'hmi' && !!msg.readonly;   // f.eks. recorderen eller en skjerm: leser bare
-      c.serves = c.role === 'adapter' && Array.isArray(msg.serves) ? msg.serves.map(String) : [];   // recorderen: ['history']
+      c.readonly = c.role === 'hmi' && !!msg.readonly;   // f.eks. en skjerm eller en logger: leser bare
+      c.serves = c.role === 'adapter' && Array.isArray(msg.serves) ? msg.serves.map(String) : [];   // en historikktjeneste: ['history']
       send(c, { type: 'welcome', name: c.name, role: c.role, serverTime: now() });
       if (c.role === 'hmi') {
         send(c, { type: 'tags', tags: registrySnapshot() });
@@ -786,18 +786,18 @@ function handle(c, msg) {
     case 'historyRange': {
       // en trend ber om et tidsrom: { id, tags, from, to, points }
       //   → { type: 'historyRange', id, series: { tag: [[ts, value eller null for et hull], ...] }, source, note }
-      // Hubens eget minne svarer når det rekker langt nok tilbake; ellers svarer recorderen,
-      // fra databasen sin. Uten recorder er minnet alt som finnes.
+      // Hubens eget minne svarer når det rekker langt nok tilbake; ellers svarer en historikktjeneste
+      // (en adapter som sa serves: ['history']), fra databasen sin. Uten den er minnet alt som finnes.
       const q = { tags: (Array.isArray(msg.tags) ? msg.tags : []).map(String).slice(0, 8), from: Number(msg.from), to: Number(msg.to), points: Number(msg.points) || 1000 };
       const reply = r => send(c, Object.assign({ type: 'historyRange', id: msg.id }, r));
       if (!(q.to > q.from)) return reply({ series: {}, error: 'empty time range' });
       if (memoryCovers(q)) return reply({ source: 'hub', series: fromMemory(q) });
       let rec = null;
       for (const o of clients) if (o.role === 'adapter' && o.serves && o.serves.includes('history')) rec = o;
-      if (!rec) return reply({ source: 'hub', series: fromMemory(q), note: 'The recorder isn’t running, so only the last few minutes are shown' });
+      if (!rec) return reply({ source: 'hub', series: fromMemory(q), note: 'No history database is connected, so only the last few minutes are shown' });
       const qid = ++querySeq;
       const timer = setTimeout(() => {
-        if (pendingQueries.delete(qid)) reply({ source: 'hub', series: fromMemory(q), note: 'The recorder didn’t answer in time, so only the last few minutes are shown' });
+        if (pendingQueries.delete(qid)) reply({ source: 'hub', series: fromMemory(q), note: 'The history database didn’t answer in time, so only the last few minutes are shown' });
       }, 20000);
       pendingQueries.set(qid, { reply, timer, q });
       send(rec, Object.assign({ type: 'query', id: qid }, q));
@@ -805,8 +805,8 @@ function handle(c, msg) {
     }
 
     case 'queryResult': {
-      // svaret fra recorderen, sendt videre til HMI-en som spurte. Tagger den aldri lagret (ingen
-      // lagringsregel), får det hubens minne har, og en merknad som sier hvorfor.
+      // svaret fra historikktjenesten, sendt videre til HMI-en som spurte. Tagger den aldri lagret,
+      // får det hubens minne har, og en merknad som sier hvorfor.
       if (!c.serves || !c.serves.includes('history')) return;
       const p = pendingQueries.get(msg.id);
       if (!p) return;
@@ -814,15 +814,15 @@ function handle(c, msg) {
       clearTimeout(p.timer);
       const series = msg.series || {};
       const unrecorded = Array.isArray(msg.unrecorded) ? msg.unrecorded.filter(n => p.q.tags.includes(n)) : [];
-      // etter recorderens siste punkt, hubens minne: verdier den ikke lagret (ingen regel lenger)
+      // etter tjenestens siste punkt, hubens minne: verdier den ikke har lagret ennå
       const mem = fromMemory(p.q);
       for (const name of p.q.tags) {
         const got = Array.isArray(series[name]) ? series[name] : [];
         const lastT = got.length ? got[got.length - 1][0] : -Infinity;
         series[name] = got.concat((mem[name] || []).filter(pt => pt[0] > lastT));
       }
-      p.reply({ source: 'recorder', series, error: msg.error, ms: msg.ms,
-        note: unrecorded.length ? `Not recorded, so only the last few minutes: ${unrecorded.join(', ')}. Add a recording rule to keep its history` : undefined });
+      p.reply({ source: 'history', series, error: msg.error, ms: msg.ms,
+        note: unrecorded.length ? `Not in the history database, so only the last few minutes: ${unrecorded.join(', ')}` : undefined });
       return;
     }
 
@@ -1025,7 +1025,7 @@ const server = http.createServer(async (req, res) => {
         fs.mkdirSync(path.dirname(NAMES_PATH), { recursive: true });
         writeNames(rn.names);
         indexNames();
-        broadcastRegistry();   // alle HMI-er, og recorderen, får navnene med taglisten
+        broadcastRegistry();   // alle HMI-er får navnene med taglisten
         log(`[names] ${changes.length} change${changes.length === 1 ? '' : 's'} saved to ${NAMES_PATH}`);
         return json(res, 200, { ok: true, tags: rn.names.tags });
       } catch (e) {

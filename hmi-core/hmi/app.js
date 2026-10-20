@@ -286,7 +286,7 @@
         setTimeout(() => resolve([]), 4000);
       });
     },
-    // punkter for et tidsrom, fra hubens minne eller recorderens database:
+    // punkter for et tidsrom, fra hubens minne eller en historikktjeneste:
     // gir { series: { tag: [[ts, value eller null], ...] }, source, note, error }
     historyRange(tags, from, to, points) {
       if (!tags.length) return Promise.resolve({ series: {} });
@@ -1625,7 +1625,6 @@
           const labels = [...state.tags.values()].filter(t => t.label).map(t => t.name + '=' + t.label).join('|');
           if (labels !== state.labelsKey) { state.labelsKey = labels; for (const w of state.mounted.values()) if (w.handle.relabel) w.handle.relabel(); }
         }
-        renderRecPause();
         for (const id of state.mounted.keys()) markCalc(id);
         if (state.announceCalcs) {
           state.announceCalcs = false;
@@ -1643,7 +1642,6 @@
       }
       case 'update': {
         state.values.set(m.tag, { value: m.value, ts: m.ts, quality: m.quality || 'good' });
-        if (m.tag === 'rec.paused' || m.tag === 'rec.pause_text') renderRecPause();
         const ids = state.tagIndex.get(m.tag);
         if (ids) for (const id of ids) {
           const w = state.mounted.get(id);
@@ -1690,16 +1688,6 @@
       if (!send({ ...msg, id })) { state.requests.delete(id); return reject(new Error('not connected to the hub')); }
       setTimeout(() => { if (state.requests.delete(id)) reject(new Error('the hub did not answer')); }, timeoutMs);
     });
-  }
-
-  // recorderen er pauset: vises i topplinjen, også i Run-modus,
-  // så ingen tror at verdier lagres når de ikke gjør det
-  function renderRecPause() {
-    const b = $('#recpause');
-    const n = state.values.get('rec.paused'), t = state.values.get('rec.pause_text');
-    const on = !!(n && n.quality !== 'bad' && Number(n.value) > 0 && state.tags.has('rec.paused'));
-    b.hidden = !on;
-    if (on) b.title = `Recording paused: ${(t && t.value) || ''}`;
   }
 
   function openCalcs() {

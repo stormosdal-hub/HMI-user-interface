@@ -540,19 +540,19 @@
     },
     {
       "name": "kv_speed_rpm",
-      "formula": "${kv}.speedAct / 16384 * 3000",
+      "formula": "${kv}.reals_0",
       "unit": "rpm",
       "decimals": 0,
       "type": "number",
-      "description": "speedAct scaled: 16#4000 = p2000 (reference speed). 3000 rpm is the V90 factory setting; use the p2000 of your drive."
+      "description": "Speed from TcpLink (txAnalog.reals[0], Hastighet [rpm]), already in rpm. The other kv_* calculations use this name, so they don't depend on where the PLC puts the speed."
     },
     {
       "name": "kv_torque_nm",
-      "formula": "${kv}.torqueAct / 16384 * 1.0",
+      "formula": "${kv}.reals_1",
       "unit": "Nm",
       "decimals": 2,
       "type": "number",
-      "description": "torqueAct scaled: 16#4000 = p2003 (reference torque). 1.00 Nm is the V90 factory setting; use the p2003 of your drive."
+      "description": "Torque from TcpLink (txAnalog.reals[1], Moment [Nm]), already in Nm."
     },
     {
       "name": "kv_power_w",

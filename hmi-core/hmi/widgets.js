@@ -831,7 +831,8 @@
 
   // ---------------------------------------------------------------- trend
   // Viser et tidsrom: live (siste `span` fram til nå) eller en fast strekning lenger tilbake.
-  // Punktene kommer fra huben, som spør recorderen om alt som er eldre enn dens eget minne.
+  // Punktene kommer fra huben, som spør en historikktjeneste (hvis en er koblet til) om alt som er
+  // eldre enn dens eget minne.
   // Verdier tegnes som trinn: en lagret verdi holder til den neste. null er et hull (foreldet).
   const TREND_COLORS = ['#f2b441', '#5cc8e8', '#43c483'];
   const RANGES = [['10 min', 600], ['1 h', 3600], ['8 h', 28800], ['24 h', 86400], ['7 d', 604800]];
@@ -846,7 +847,7 @@
       P.label('Trend'),
       { key: 'tags', label: 'Tags (comma separated)', type: 'tags', default: '' },
       { key: 'window', label: 'Time range (seconds)', type: 'number', default: 120,
-        hint: 'What the trend shows at first. Beyond the hub’s last few minutes, the points come from the recorder' },
+        hint: 'What the trend shows at first. The hub keeps the last few minutes; anything older needs a connected history database' },
       { key: 'timeControls', label: 'Time controls in Run mode', type: 'bool', default: true,
         hint: 'Buttons for 10 min to 7 days, back and forward in time, and Live' },
       { key: 'min', label: 'Min (empty = auto)', type: 'number', default: '' },

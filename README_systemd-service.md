@@ -19,21 +19,19 @@ nedenfor.
 | Node-programmet | `/usr/bin/node` |
 | Arbeidsmappe | `/home/stormpi5/Documents/kjoreverk_telemetry` |
 | Tjeneste 1 | `kjoreverk@hub.service` |
-| Tjeneste 2 | `kjoreverk@binary-adapter.service` (KjoreverkLink), eller `kjoreverk@tcplink-adapter.service` (TcpLink, se [Bytte til TcpLink](#bytte-til-tcplink)) |
-| Valgfritt | `kjoreverk@recorder.service`, `kjoreverk@db-browser.service` (se [Legge til et nytt program](#legge-til-et-nytt-program)) |
+| Tjeneste 2 | `kjoreverk@tcplink-adapter.service` (forbindelsen til PLS-en med TcpLink; for den eldre KjoreverkLink-blokken, se [KjoreverkLink og binary-adapter](#kjoreverklink-og-binary-adapter)) |
 | Malenhet | `/etc/systemd/system/kjoreverk@.service` |
 | Konfigurasjon per instans | `/etc/kjoreverk/instances/*.env` |
 
 > Installerer du Node på nytt, kjør `which -a node` igjen og oppdater `ExecStart` i
 > malenheten. systemd bruker ikke `PATH` fra skallet ditt, så stien må alltid stå skrevet ut
-> (se [Merknader og fallgruver](#merknader-og-fallgruver)). Recorderen og databaseleseren
-> trenger Node 22.13 eller nyere; sjekk med `/usr/bin/node -v`.
+> (se [Merknader og fallgruver](#merknader-og-fallgruver)).
 
 ## Slik virker det
 
 - `kjoreverk@.service` er en **mal**: `@` betyr at den kan startes flere ganger under
   forskjellige instansnavn (`%i`).
-- Hvert instansnavn (`hub`, `binary-adapter`, ...) hører til en fil
+- Hvert instansnavn (`hub`, `tcplink-adapter`, ...) hører til en fil
   `/etc/kjoreverk/instances/<navn>.env` med én linje: `SCRIPT_ARGS=...` — nøyaktig det du
   ellers ville skrevet etter `node`.
 - Stiene i `SCRIPT_ARGS` er relative til arbeidsmappen (`WorkingDirectory`), så
@@ -54,17 +52,13 @@ sudo mkdir -p /etc/kjoreverk/instances
 
 echo 'SCRIPT_ARGS=hmi-core/hub.js' | sudo tee /etc/kjoreverk/instances/hub.env
 
-echo 'SCRIPT_ARGS=hmi-core/adapters/binary-adapter.js hmi-core/adapters/binary-layouts/kjoreverk-layout.json --plc=10.0.123.51:2000' | sudo tee /etc/kjoreverk/instances/binary-adapter.env
+echo 'SCRIPT_ARGS=hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000' | sudo tee /etc/kjoreverk/instances/tcplink-adapter.env
 ```
 
-Layoutfilen kan også utelates: uten den bruker `binary-adapter.js`
-`adapters/binary-layouts/kjoreverk-layout.json` i `hmi-core`. `--plc=` overstyrer adressen i
-layouten.
-
-> **Oppdaterer du fra en eldre `hmi-core`:** layouten het før `adapters/layouts/kjoreverk.json`.
-> Står den gamle stien fortsatt i `/etc/kjoreverk/instances/binary-adapter.env`, finner ikke
-> adapteren layouten, og loggen sier `Layout ...: ENOENT`. Skriv filen på nytt med linjen over,
-> og kjør `sudo systemctl restart kjoreverk@binary-adapter.service`.
+`tcplink-adapter.js` trenger ingen layoutfil: navnene og størrelsene kommer fra PLS-en. Resten
+(tagprefikset, alarmene og hold-for-å-kjøre) står i
+`hmi-core/adapters/tcplink-options/kjoreverk-options.json`, som den finner av seg selv.
+`--plc=` overstyrer adressen der.
 
 ### 2. Lag malenheten
 
@@ -101,7 +95,7 @@ WantedBy=multi-user.target
 ```bash
 sudo systemctl daemon-reload
 sudo systemctl enable --now kjoreverk@hub.service
-sudo systemctl enable --now kjoreverk@binary-adapter.service
+sudo systemctl enable --now kjoreverk@tcplink-adapter.service
 ```
 
 `enable` lager lenken som starter tjenesten ved oppstart (uten den starter tjenestene **ikke**
@@ -112,15 +106,14 @@ etter en omstart, selv om `start` får dem til å kjøre akkurat nå). `--now` g
 
 ```bash
 systemctl status kjoreverk@hub.service
-systemctl status kjoreverk@binary-adapter.service
+systemctl status kjoreverk@tcplink-adapter.service
 ```
 
 Begge skal vise `Active: active (running)` og `Loaded: ... enabled`.
 
-## Bytte til TcpLink
+## Bytte fra binary-adapter til tcplink-adapter
 
-Kjører PLS-en TcpLink-blokken i stedet for KjoreverkLink, bytter du `binary-adapter` med
-`tcplink-adapter`. Den trenger ingen layoutfil: navnene og størrelsene kommer fra PLS-en.
+En Pi som er satt opp før TcpLink, kjører `kjoreverk@binary-adapter.service`. Slik bytter du:
 
 ```bash
 echo 'SCRIPT_ARGS=hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000' | sudo tee /etc/kjoreverk/instances/tcplink-adapter.env
@@ -130,11 +123,32 @@ sudo systemctl enable --now kjoreverk@tcplink-adapter.service
 
 - **Stopp den gamle først** (`disable --now`): PLS-en tar imot én klient per port, og
   `binary-adapter.js` snakker det gamle formatet.
-- **Resten av innstillingene** (tagprefikset, alarmene og hold-for-å-kjøre) står i
-  `hmi-core/adapters/tcplink-options/kjoreverk-options.json`. `--plc=` overstyrer adressen
-  der.
 - **Tilbake til KjoreverkLink:** de samme to `systemctl`-kommandoene, med navnene byttet om.
-- **I kommandoene nedenfor** står `binary-adapter`: bruk `tcplink-adapter` i stedet.
+  `binary-adapter.env` blir liggende, så den trenger ikke lages på nytt.
+- **Beregningene i prosjektet** må lese TcpLink-taggene (`calc.kv_speed_rpm` = `${kv}.reals_0`).
+  `config/hmi.json` i `hmi-core` gjør det; ligger prosjektet ditt et annet sted, se avsnittet
+  om TcpLink i `hmi-core/README.md`.
+
+## KjoreverkLink og binary-adapter
+
+Kjører PLS-en fortsatt den eldre KjoreverkLink-blokken, bruker du `binary-adapter` i stedet for
+`tcplink-adapter` i alle kommandoene i denne filen. Konfigurasjonsfilen er da:
+
+```bash
+echo 'SCRIPT_ARGS=hmi-core/adapters/binary-adapter.js hmi-core/adapters/binary-layouts/kjoreverk-layout.json --plc=10.0.123.51:2000' | sudo tee /etc/kjoreverk/instances/binary-adapter.env
+```
+
+- **Layoutfilen** kan utelates: uten den bruker `binary-adapter.js`
+  `adapters/binary-layouts/kjoreverk-layout.json` i `hmi-core`. `--plc=` overstyrer adressen i
+  layouten.
+- **Bare én av adapterne om gangen:** `sudo systemctl disable --now kjoreverk@tcplink-adapter.service`
+  før du slår på `kjoreverk@binary-adapter.service`.
+- **Beregningene** `calc.kv_speed_rpm` og `calc.kv_torque_nm` må skalere `speedAct` og
+  `torqueAct` igjen; se avsnittet om faste blokker i `hmi-core/README.md`.
+- **Oppdaterer du fra en eldre `hmi-core`:** layouten het før `adapters/layouts/kjoreverk.json`.
+  Står den gamle stien fortsatt i `/etc/kjoreverk/instances/binary-adapter.env`, finner ikke
+  adapteren layouten, og loggen sier `Layout ...: ENOENT`. Skriv filen på nytt med linjen
+  over, og kjør `sudo systemctl restart kjoreverk@binary-adapter.service`.
 
 ## Legge til et nytt program
 
@@ -151,26 +165,6 @@ sudo systemctl enable --now kjoreverk@<navn>.service
 Bytt ut `<navn>` med en kort betegnelse (bare bokstaver, sifre og bindestrek, ingen
 skråstrek). Den blir både filnavnet og delen etter `@` i tjenestenavnet.
 
-**Recorderen og databaseleseren** startes på samme måte:
-
-```bash
-echo 'SCRIPT_ARGS=hmi-core/recorder.js' | sudo tee /etc/kjoreverk/instances/recorder.env
-echo 'SCRIPT_ARGS=hmi-core/db-browser.js' | sudo tee /etc/kjoreverk/instances/db-browser.env
-sudo systemctl enable --now kjoreverk@recorder.service
-sudo systemctl enable --now kjoreverk@db-browser.service
-```
-
-- **Databasen** havner i `hmi-core/data/recorder.db`, og lagringsreglene i
-  `hmi-core/data/recorder.rules.json`. Skal den ligge et annet sted, legg til
-  `--db /sti/til/recorder.db` på begge linjene.
-- **Rekkefølgen spiller ingen rolle:** recorderen prøver huben på nytt hvert 2. sekund til
-  den svarer. Første gang, før recorderen har laget databasen, avslutter databaseleseren med
-  en melding om det; systemd prøver igjen etter 2 sekunder, og da finnes den. Har systemd gitt
-  opp (`start request repeated too quickly` i `systemctl status`), kjør
-  `sudo systemctl restart kjoreverk@db-browser.service`.
-- **Ved stopp** sender systemd `SIGTERM`. Recorderen skriver da det som venter i RAM til
-  databasen før den avslutter, så ingenting går tapt ved `systemctl stop` eller `reboot`.
-
 Trenger et senere program en **annen** arbeidsmappe eller bruker enn malen gir, ikke lag en
 helt ny enhet — overstyr bare den instansen:
 
@@ -185,8 +179,8 @@ kommer fortsatt fra malen.
 
 **Sjekk at begge er slått på (overlever omstart) og kjører:**
 ```bash
-systemctl is-enabled kjoreverk@hub.service kjoreverk@binary-adapter.service
-systemctl status kjoreverk@hub.service kjoreverk@binary-adapter.service
+systemctl is-enabled kjoreverk@hub.service kjoreverk@tcplink-adapter.service
+systemctl status kjoreverk@hub.service kjoreverk@tcplink-adapter.service
 ```
 
 **Bekreft at riktig Node-program faktisk kjører:**
@@ -198,10 +192,10 @@ ls -l /proc/<PID>/exe                    # skal peke til /usr/bin/node
 **Se loggene:**
 ```bash
 journalctl -u kjoreverk@hub.service -n 50 --no-pager
-journalctl -u kjoreverk@binary-adapter.service -n 50 --no-pager
+journalctl -u kjoreverk@tcplink-adapter.service -n 50 --no-pager
 
 # følg loggen live mens du tester:
-journalctl -u kjoreverk@binary-adapter.service -f
+journalctl -u kjoreverk@tcplink-adapter.service -f
 ```
 
 **Test at den kommer seg etter et krasj** (simulerer et hardt krasj):
@@ -214,7 +208,7 @@ systemctl status kjoreverk@hub.service   # skal kjøre igjen innen ~2 s, med ny 
 ```bash
 sudo reboot
 # når den er oppe igjen:
-systemctl status kjoreverk@hub.service kjoreverk@binary-adapter.service
+systemctl status kjoreverk@hub.service kjoreverk@tcplink-adapter.service
 ```
 Begge skal være `active (running)` uten at du har kjørt noen kommandoer for hånd.
 
@@ -232,8 +226,7 @@ Begge skal være `active (running)` uten at du har kjørt noen kommandoer for h�
   klar**, legg til `ExecStartPre=/bin/sleep 5` under `[Service]` i malen, eller som en
   overstyring for bare den instansen som trenger ventetiden.
 - **Databaseservere** (PostgreSQL, MariaDB o.l.) bør ikke startes slik: de har sin egen
-  tjeneste fra pakken sin. Recorderen er ikke en databaseserver; den bruker SQLite inne i seg
-  selv og passer i denne malen (se [Legge til et nytt program](#legge-til-et-nytt-program)).
+  tjeneste fra pakken sin.
 - **Etter enhver endring i malenheten eller en `.env`-fil**, kjør:
   ```bash
   sudo systemctl daemon-reload
