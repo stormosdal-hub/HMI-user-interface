@@ -6,8 +6,9 @@
  *  - WebSocket- og JSON-protokoll for HMI-er og adaptere (se README.md)
  *  - Serverer HMI-webappen fra ./hmi over HTTP på samme port
  *  - Lagrer prosjektkonfigurasjonen (widgeter, skjermbilder, tagkoblinger) som en JSON-fil
- *  - Holder siste verdi for hver tag, en kort historikk per numerisk tag,
- *    og en løpende liste over hendelser/alarmer
+ *  - Holder siste verdi for hver tag, de siste endringene av hver numerisk tag (også de en
+ *    adapter gjenoppretter fra enheten, f.eks. PLS-ens ringbuffer), og en løpende liste over
+ *    hendelser/alarmer
  *
  * Bruk:    node hub.js [port] [config-file]
  *          HMI_PORT=8080 HMI_CONFIG=./config/hmi.json node hub.js
@@ -35,7 +36,7 @@ const NAMES_PATH = path.join(path.dirname(CONFIG_PATH), 'tagnames.json');
 let THREE_DIR = null;
 try { THREE_DIR = path.dirname(require.resolve('three')); } catch { /* npm install er ikke kjørt ennå */ }
 const ASSET_MAX = 20 * 1024 * 1024;
-const HISTORY_LEN = Number(process.env.HMI_HISTORY || 600);   // punkter som beholdes per numerisk tag
+const HISTORY_LEN = Number(process.env.HMI_HISTORY || 600);   // endringer som beholdes per numerisk tag
 const EVENTS_LEN = 200;
 
 // ---------------------------------------------------------------- tilstand
@@ -119,14 +120,7 @@ function applyUpdate(name, value, ts, quality, from) {
   t.value = value;
   t.ts = ts;
   t.quality = quality || 'good';
-  // tall, og boolske verdier som 1 og 0, så en trend kan vise en bit også
-  const hv = typeof value === 'boolean' ? (value ? 1 : 0) : value;
-  if (typeof hv === 'number' && Number.isFinite(hv)) {
-    let h = history.get(name);
-    if (!h) history.set(name, (h = []));
-    h.push([ts, hv]);
-    if (h.length > HISTORY_LEN) h.splice(0, h.length - HISTORY_LEN);
-  }
+  remember(name, ts, value);
   broadcastToHmi({ type: 'update', tag: name, value, ts, quality: t.quality }, name);
   if (t.alarm) tagAlarm(t);
   feedTime(name, value, mono());
@@ -259,12 +253,7 @@ function evalCalc(e) {
   t.value = value;
   t.ts = ts;
   t.quality = quality;
-  if (typeof value === 'number') {
-    let h = history.get(t.name);
-    if (!h) history.set(t.name, (h = []));
-    h.push([ts, value]);
-    if (h.length > HISTORY_LEN) h.splice(0, h.length - HISTORY_LEN);
-  }
+  if (typeof value === 'number') remember(t.name, ts, value);
   broadcastToHmi({ type: 'update', tag: t.name, value, ts, quality }, t.name);
 }
 
@@ -497,6 +486,93 @@ fs.watchFile(NAMES_PATH, { interval: 2000 }, (cur, prev) => {
 });
 
 // ---------------------------------------------------------------- historikk for trender
+// Tall, og boolske verdier som 1 og 0, så en trend kan vise en bit også. Bare endringer lagres:
+// trendene tegner trinn, så en verdi som er lik den forrige, sier ingenting nytt, og en tag som
+// sjelden endres, beholder lang historikk innenfor HISTORY_LEN punkter.
+function remember(name, ts, value) {
+  const v = typeof value === 'boolean' ? (value ? 1 : 0) : value;
+  if (typeof v !== 'number' || !Number.isFinite(v)) return;
+  let h = history.get(name);
+  if (!h) history.set(name, (h = []));
+  const last = h[h.length - 1];
+  if (last && last[1] === v) return;
+  h.push([ts, v]);
+  if (h.length > HISTORY_LEN) h.splice(0, h.length - HISTORY_LEN);
+}
+
+// Eldre punkter en adapter har fått fra enheten selv, for eksempel PLS-ens retentive ringbuffer
+// (tcplink-adapter.js): { type: 'restore', origin, series: { tag: [[ts, value, ref?], ...] } }.
+// Etter et strømbrudd eller et brudd på linken er de tilbake i trendene.
+//   ref    valgfri: hvilken post i enheten punktet kommer fra (TcpLink: løpenummer og PLS-tid).
+//          En ref huben har fått før, hoppes over, så en adapter som starter på nytt og sender
+//          alt igjen, ikke gir dobbelpunkter. Punkter med samme ref (et word og bitene i det)
+//          telles som én endring i hendelsesloggen.
+// Hvert punkt settes inn på sin plass i tid:
+//   - samme verdi som punktet før: sier ingenting nytt, hoppes over.
+//   - samme verdi som punktet etter: det punktet er den samme endringen, sett senere (huben fikk
+//     den direkte, eller først da linken kom tilbake). Det tas bort, og endringen står på
+//     enhetens eget tidspunkt.
+// Ikke nye: de som bare flyttet en endring huben allerede hadde, høyst 2 s. Er noe nytt, sier
+// hendelsesloggen fra (origin: hvor de kom fra), og HMI-ene får punktene (`restored`), så åpne
+// trender kan hente tidsrommet på nytt.
+const restoredRefs = new Map();   // adapter -> Set(ref), de siste REFS_MAX
+const REFS_MAX = 20000;
+function restoreHistory(c, series, origin) {
+  const added = {}, items = new Set(), t0 = now();
+  const seen = restoredRefs.get(c.name) || new Set(), fresh = new Set();
+  let n = 0, refused = 0;
+  for (const [name, pts] of Object.entries(series && typeof series === 'object' ? series : {})) {
+    const t = tags.get(name);
+    if (!t || t.owner !== c.name || !Array.isArray(pts)) { refused++; continue; }   // bare egne tagger
+    let h = history.get(name);
+    if (!h) history.set(name, (h = []));
+    const list = pts.filter(p => Array.isArray(p) && Number.isFinite(Number(p[0])))
+      .map(p => [Math.min(Number(p[0]), t0), typeof p[1] === 'boolean' ? (p[1] ? 1 : 0) : p[1], p[2]])
+      .filter(p => typeof p[1] === 'number' && Number.isFinite(p[1]))
+      .sort((a, b) => a[0] - b[0]);
+    for (const [ts, v, ref] of list) {
+      const id = ref == null ? null : String(ref).slice(0, 64);
+      if (id !== null) { if (seen.has(id)) continue; fresh.add(id); }
+      const p = [ts, v];
+      let i = h.length;
+      while (i > 0 && h[i - 1][0] > p[0]) i--;
+      if (i > 0 && h[i - 1][1] === p[1]) continue;
+      const next = h[i];
+      h.splice(i, 0, p);
+      if (next && next[1] === p[1]) {
+        h.splice(i + 1, 1);
+        if (next[0] - p[0] <= 2000) continue;
+      }
+      (added[name] = added[name] || []).push(p);
+      items.add(id !== null ? 'r' + id : 'p' + n);
+      n++;
+    }
+    if (h.length > HISTORY_LEN) h.splice(0, h.length - HISTORY_LEN);
+  }
+  for (const id of fresh) seen.add(id);
+  for (const id of seen) { if (seen.size <= REFS_MAX) break; seen.delete(id); }   // de eldste først
+  restoredRefs.set(c.name, seen);
+  if (refused) log(`[restore] ${c.name}: ${refused} series skipped (unknown tag, or one ${c.name} doesn't own)`);
+  if (!n) return;
+  let from = Infinity, to = -Infinity;
+  for (const pts of Object.values(added)) for (const p of pts) { from = Math.min(from, p[0]); to = Math.max(to, p[0]); }
+  log(`[restore] ${c.name}: ${n} point${n === 1 ? '' : 's'} for ${Object.keys(added).length} tag${Object.keys(added).length === 1 ? '' : 's'}`);
+  const k = items.size;
+  pushEvent({ source: c.name, severity: 'info', message: `Restored ${k} change${k === 1 ? '' : 's'} from ${String(origin || 'the device').slice(0, 80)} (${clockText(from)} to ${clockText(to)})` });
+  for (const o of clients) {
+    if (o.role !== 'hmi') continue;
+    const mine = {};
+    for (const name of Object.keys(added)) if (matches(o.subs, name)) mine[name] = added[name];
+    if (Object.keys(mine).length) send(o, { type: 'restored', series: mine });
+  }
+}
+
+// 2026-10-26 09:12:03, i denne maskinens lokaltid
+function clockText(ms) {
+  const d = new Date(ms), p = x => String(x).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+}
+
 const HUB_START = now();
 const pendingQueries = new Map();   // spørrings-id -> { reply, timer }, mens historikktjenesten jobber med den
 let querySeq = 0;
@@ -727,6 +803,13 @@ function handle(c, msg) {
       return;
     }
 
+    case 'restore': {
+      // eldre punkter fra enheten selv, til historikken (se restoreHistory). Endrer ikke verdien nå.
+      if (c.role !== 'adapter') return send(c, { type: 'error', message: 'only an adapter can restore history' });
+      restoreHistory(c, msg.series, msg.origin);
+      return;
+    }
+
     case 'subscribe': {
       // { tags: ["a.b", "esp32_1.*", "*"] }  — uten tags betyr det alt
       const list = Array.isArray(msg.tags) && msg.tags.length ? msg.tags : ['*'];
@@ -794,10 +877,10 @@ function handle(c, msg) {
       if (memoryCovers(q)) return reply({ source: 'hub', series: fromMemory(q) });
       let rec = null;
       for (const o of clients) if (o.role === 'adapter' && o.serves && o.serves.includes('history')) rec = o;
-      if (!rec) return reply({ source: 'hub', series: fromMemory(q), note: 'No history database is connected, so only the last few minutes are shown' });
+      if (!rec) return reply({ source: 'hub', series: fromMemory(q), note: 'No history database is connected, so only what the hub has in memory is shown' });
       const qid = ++querySeq;
       const timer = setTimeout(() => {
-        if (pendingQueries.delete(qid)) reply({ source: 'hub', series: fromMemory(q), note: 'The history database didn’t answer in time, so only the last few minutes are shown' });
+        if (pendingQueries.delete(qid)) reply({ source: 'hub', series: fromMemory(q), note: 'The history database didn’t answer in time, so only what the hub has in memory is shown' });
       }, 20000);
       pendingQueries.set(qid, { reply, timer, q });
       send(rec, Object.assign({ type: 'query', id: qid }, q));
@@ -822,7 +905,7 @@ function handle(c, msg) {
         series[name] = got.concat((mem[name] || []).filter(pt => pt[0] > lastT));
       }
       p.reply({ source: 'history', series, error: msg.error, ms: msg.ms,
-        note: unrecorded.length ? `Not in the history database, so only the last few minutes: ${unrecorded.join(', ')}` : undefined });
+        note: unrecorded.length ? `Not in the history database, so only what the hub has in memory: ${unrecorded.join(', ')}` : undefined });
       return;
     }
 

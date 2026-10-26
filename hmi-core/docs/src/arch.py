@@ -27,6 +27,7 @@ a1 = TOP
 h1 = s.box(AX, a1, AW, 'tcplink-adapter.js', [
     'Gjør hver plass i TcpLink om til en tag (kv_1.bit00, kv_1.reals_0 …), med navnet og enheten fra PLS-en.',
     'Sender kommandorammen tilbake ved hver endring og hvert 500 ms.',
+    'Legger det PLS-en har logget, tilbake i hubens historikk (restore).',
     ('Ingen layoutfil: størrelsene står i headeren. kv_1.link sier om forbindelsen er oppe.', INK3)],
     accent=AMBER, mono_title=True)
 a1c = a1 + h1 / 2
@@ -40,8 +41,9 @@ s.add(s.text(AX + AW / 2 + 10, a1 + h1 + 20, 'leses ved start', 12, CYAN, 500))
 # ---------------------------------------------------------------- PLS-en
 ph1 = s.box(PX, TOP, PW, 'Siemens S7-1200', [
     'Sender data (196 byte) ved endring og minst én gang i sekundet, og navnene fra LinkNames ved hver tilkobling.',
+    'Logger endringer i en retentiv ringbuffer og sender hele den ved hver tilkobling.',
     'Tar imot kommandorammen (80 byte); er den borte i 2 s, nullstilles rx.'],
-    sub='TcpLink og LinkNames', accent=INK3, title_size=14)
+    sub='TcpLink, LinkNames og LinkHistory', accent=INK3, title_size=14)
 s.arrow(PX + PW, a1c, AX - 2, a1c, INK3, both=True, dash='5 4', sw=1.6)
 s.add(s.text((PX + PW + AX) / 2, a1c - 12, 'TCP', 12, INK3, 500, 'middle'))
 s.add(s.text((PX + PW + AX) / 2, a1c + 22, 'port 2000', 12, INK3, 400, 'middle'))
@@ -54,7 +56,7 @@ ys = {}
 yy = parts_y
 for key, title, lines, acc in [
     ('broker', 'Tag-broker', ['Hver tag med verdi, kvalitet og eier. Nettlesere abonnerer på tagger; en skriving går til adapteren som eier taggen.'], AMBER),
-    ('history', 'Historikk, hendelser og alarmer', ['De siste 600 punktene for hver numeriske tag, de siste 200 hendelsene og alarmlisten med kvittering, holdt i minnet.'], AMBER),
+    ('history', 'Historikk, hendelser og alarmer', ['De siste 600 endringene for hver numeriske tag, også det PLS-en har logget, de siste 200 hendelsene og alarmlisten med kvittering, holdt i minnet.'], AMBER),
     ('calc', 'Beregninger og kontroller', ['calc.*-tagger fra formler satt opp i HMI-en: hastighet i rpm, effekt, betingelser og kontroller over tid. De fortsetter å kjøre selv om alle nettlesere er lukket.'], VIOLET),
     ('web', 'Webserver', ['Leverer HMI-appen, prosjektfilen, tegninger, animasjonskode, kodetekster og tagnavn.'], CYAN),
 ]:
@@ -102,7 +104,7 @@ def pair(x1, x2, y, gap=7):
 
 gx = (AX + AW + HX) / 2
 pair(AX + AW, HX, a1c)
-s.add(s.text(gx, a1c - 22, 'update, event', 12.5, AMBER, 500, 'middle'))
+s.add(s.text(gx, a1c - 22, 'update, event, restore', 12.5, AMBER, 500, 'middle'))
 s.add(s.text(gx, a1c + 34, 'write', 12.5, BLUE, 500, 'middle'))
 s.add(s.text(gx, a1c + 52, 'WebSocket, JSON', 12, INK3, 400, 'middle'))
 

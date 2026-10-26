@@ -9,7 +9,7 @@ s = Svg(W, 2000, 'TcpLink: navnene kommer fra PLS-en. TcpLink, tcplink-adapter.j
 s.add(s.text(48, 62, 'TcpLink: navnene kommer fra PLS-en', 30, INK, 600))
 s.add(s.text(48, 92, 'Slik får HMI-en både verdiene og navnene fra PLS-en, uten layoutfil. Verdier og navn går mot høyre, kommandoer mot venstre.', 15, INK2))
 s.legend(48, 128, [(AMBER, 'verdier og status', False), (CYAN, 'navn og innstillinger', False), (BLUE, 'kommandoer', False),
-                   (GREEN, 'beskyttelser', False)])
+                   (GREEN, 'beskyttelser', False), (VIOLET, 'historikk (se tcplink-history.svg)', False)])
 
 PX, PW = 48, 390       # PLS
 AX, AW = 568, 420      # adapter
@@ -52,6 +52,7 @@ def build_plc(y):
         'TCON: passiv, lytter på port 2000, én klient om gangen.',
         ('Navnemeldingen (kind 1): én gang per tilkobling, før dataene, og igjen på en flanke på resendNames.', CYAN),
         ('Datameldinger (kind 0): ved endring og minst én gang i sekundet. Størrelsene på arrayene står i headeren.', AMBER),
+        ('Historikkmeldinger (kind 2): ringbufferen i LinkHistory etter de første dataene, så hver ny post.', VIOLET),
         ('Kommandorammen (format 3) i størrelsen PLS-en selv oppgir. En ramme med feil header bryter forbindelsen.', BLUE),
         ('Ingen kommandoramme på 2 s (rxTimeout): alt i rx nullstilles.', GREEN)], accent=INK, fill=PANEL2, title_size=14)
     plc['fb'] = (y3, h3)

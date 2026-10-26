@@ -1650,6 +1650,16 @@
         }
         break;
       }
+      case 'restored': {
+        // eldre punkter som huben har fått tilbake (f.eks. fra PLS-ens ringbuffer): trendene henter dem
+        const ids = new Set();
+        for (const tag of Object.keys(m.series || {})) for (const id of state.tagIndex.get(tag) || []) ids.add(id);
+        for (const id of ids) {
+          const w = state.mounted.get(id);
+          if (w && w.handle.restored) w.handle.restored(m.series);
+        }
+        break;
+      }
       case 'event':
         state.events.push(m);
         if (state.events.length > 200) state.events.shift();

@@ -23,6 +23,14 @@
  * kommandobit som er hold-for-å-kjøre), står i en valgfri innstillingsfil, se
  * adapters/tcplink-options/kjoreverk-options.json.
  *
+ * HISTORIKKEN. PLS-en logger endringene i de bits og words histMask velger ut, i en retentiv
+ * ringbuffer (LinkHistory), og sender hele bufferen ved hver tilkobling. Adapteren sender
+ * postene til huben som punkter i historikken til taggene (bit03, words_2 og bitene fra
+ * innstillingsfilen), på PLS-ens eget tidspunkt. Etter et strømbrudd på denne maskinen, et
+ * brudd på linken eller en omstart av huben er endringene tilbake i trendene så snart linken
+ * er oppe. Adapteren holder en kopi av det PLS-en har, så en hub som starter på nytt, får dem
+ * også når PLS-en ikke sender bufferen på nytt.
+ *
  * Bruk:
  *   node adapters/tcplink-adapter.js                        innstillingene i tcplink-options/kjoreverk-options.json
  *   node adapters/tcplink-adapter.js <options.json>         andre innstillinger
@@ -48,7 +56,8 @@ const mono = () => performance.now();
 // Big-endian overalt. Se TCP_LINK.md avsnitt 5.
 const UP_MAGIC = 0xa5, UP_VER = 7, UP_HDR = 32;     // PLS -> PC, format 7
 const DN_MAGIC = 0x5a, DN_VER = 3, DN_HDR = 14;     // PC -> PLS, format 3
-const KIND_DATA = 0, KIND_NAMES = 1;                // byte 7 i meldingen fra PLS-en
+const KIND_DATA = 0, KIND_NAMES = 1, KIND_HIST = 2; // byte 7 i meldingen fra PLS-en
+const HIST_REC = 20;                                // byte per historikkpost ("TcpLinkHistRec")
 const LEN_MAX = 8192;                               // TSEND sitt tak; alt større er en falsk header
 
 // De tolv layoutplassene, i rekkefølgen på linjen. Bits oppgis i byte, resten i antall elementer.
@@ -71,6 +80,13 @@ const SECTIONS = [
 ];
 const RANGE = { word: [0, 65535], int: [-32768, 32767], dint: [-2147483648, 2147483647] };
 
+// Hvilken plass en historikkpost gjelder (section i posten), og verdien slik taggen har den.
+// Logger PLS-en flere slags plasser senere (for eksempel analoge verdier), legges de til her.
+const HIST_SECTIONS = {
+  0: { s: SECTIONS[0], value: v => v !== 0 },   // txDigital.bits: 0 eller 1
+  1: { s: SECTIONS[1], value: v => v },         // txDigital.words: hele wordet
+};
+
 // antall plasser i en seksjon: bits oppgis i byte
 const slots = (s, n) => (s.kind === 'bool' ? n * 8 : n);
 const bytesOf = (s, n) => (s.kind === 'bool' ? n : n * s.size);
@@ -92,12 +108,13 @@ function cp1252(b) {
 
 // S7 DTL, 12 byte: år UInt, måned, dag, ukedag, time, minutt, sekund (USInt hver), nanosekund UDInt
 const readDTL = (m, o) => ({ year: m.readUInt16BE(o), month: m[o + 2], day: m[o + 3], hour: m[o + 5], minute: m[o + 6], second: m[o + 7], ns: m.readUInt32BE(o + 8) });
-// 1970 = aldri satt (en DTL starter der)
-function dtlMs(d, utc) {
-  if (!d || d.year <= 1970) return null;
+// PLS-tiden i ms. plcMs regner ut hva som helst, også en klokke som aldri er stilt;
+// dtlMs gir null for 1970, som betyr at tiden aldri er satt (en DTL starter der)
+function plcMs(d, utc) {
   const a = [d.year, d.month - 1, d.day, d.hour, d.minute, d.second, Math.floor(d.ns / 1e6)];
   return utc ? Date.UTC(a[0], a[1], a[2], a[3], a[4], a[5], a[6]) : new Date(a[0], a[1], a[2], a[3], a[4], a[5], a[6]).getTime();
 }
+const dtlMs = (d, utc) => (!d || d.year <= 1970 ? null : plcMs(d, utc));
 // vises i denne maskinens lokaltid
 function dtlText(d, utc) {
   const ms = dtlMs(d, utc);
@@ -128,7 +145,8 @@ function walkNames(m, length) {
 
 // Returnerer { kind, frame, rest, skipped }, med frame null når flere byte trengs.
 // TCP er en bytestrøm: let etter headeren. En header teller bare når alt i den stemmer: for
-// data må len passe med layouten, for navn må reservebytene være null og strengene slutte ved len.
+// data må len passe med layouten, for navn må reservebytene være null og strengene slutte ved
+// len, og for historikk må len passe med antall poster.
 function nextFrame(buf) {
   let skipped = 0;
   for (;;) {
@@ -146,6 +164,11 @@ function nextFrame(buf) {
         buf.subarray(20, 32).every(x => x === 0) && length >= UP_HDR + 2 * buf.subarray(8, 20).reduce((a, x) => a + x, 0)) {
       if (buf.length < length) return { kind: null, frame: null, rest: buf, skipped };
       if (walkNames(buf, length) !== null) return { kind: KIND_NAMES, frame: buf.subarray(0, length), rest: buf.subarray(length), skipped };
+    }
+    if (ver === UP_VER && kind === KIND_HIST && (buf[6] & 0xfe) === 0 && length === UP_HDR + HIST_REC * buf.readUInt16BE(14) &&
+        length <= LEN_MAX && buf.readUInt32BE(16) >= 1 && buf.subarray(24, 32).every(x => x === 0)) {
+      if (buf.length < length) return { kind: null, frame: null, rest: buf, skipped };
+      return { kind: KIND_HIST, frame: buf.subarray(0, length), rest: buf.subarray(length), skipped };
     }
     buf = buf.subarray(1);              // falsk header inne i innholdet
     skipped++;
@@ -174,6 +197,18 @@ function decodeData(m) {
   values.ts = dtlText(dtl.ts, utc);
   values.ts_is_local = !utc;
   return { seq: m.readUInt16BE(4), utc, layout: lay, values, dtl };
+}
+
+// En historikkmelding: hvor langt PLS-en har kommet, og 0..16 poster i stigende løpenummer.
+// Hver post er en plass som endret seg: section 0 = txDigital.bits (value 0/1), 1 = txDigital.words.
+function decodeHistory(m) {
+  const count = m.readUInt16BE(14), records = [];
+  for (let i = 0; i < count; i++) {
+    const o = UP_HDR + HIST_REC * i;
+    records.push({ recNo: m.readUInt32BE(o), ts: readDTL(m, o + 4), section: m[o + 16], index: m[o + 17], value: m.readUInt16BE(o + 18) });
+  }
+  return { utc: (m[6] & 1) === 0, newest: m.readUInt32BE(8), capacity: m.readUInt16BE(12), oldest: m.readUInt32BE(16),
+    clearedTo: m.readUInt32BE(20), records };
 }
 
 // Kommandorammen i størrelsene PLS-en ba om (layout[6..11]); en plass som mangler i cmd, er 0.
@@ -282,6 +317,13 @@ function run(o, hubUrl, dump) {
   const optWarned = new Set();
   let lastVals = {}, lastDtl = {}, lastUtc = true, sent = {}, lastFull = -Infinity, prevVals = null;
 
+  // historikken: det PLS-en har i ringbufferen, løpenummer -> post. Beholdes over nye tilkoblinger.
+  const hist = { recs: new Map(), known: false, got: 0, newest: 0, oldest: 1, clearedTo: 0, capacity: 0, told: false };
+  let histToHub = new Set();       // løpenumrene huben har fått på denne hubforbindelsen
+  let histTimer = null;
+  const histWarned = new Set();
+  let skew = null, skewTold = false;   // denne maskinens klokke minus PLS-klokka, fra siste datamelding
+
   // kommandobildet: det adapteren sender til PLS-en, per kommandotag
   const cmd = {};
   const holdTimers = new Map(), holdBlocked = new Set(), holdWarned = new Set(), resetTimers = new Map();
@@ -369,6 +411,9 @@ function run(o, hubUrl, dump) {
       toHub({ type: 'update', values: { [T('link')]: link, [T('rx_gaps')]: rxGaps } });
       publish(null, true);
       publishCmd();
+      // huben kan ha startet på nytt og mistet alt: den får hele historikken adapteren har
+      histToHub = new Set();
+      sendHistory();
     });
     ws.on('message', raw => {
       let m; try { m = JSON.parse(raw); } catch (e) { return; }
@@ -395,7 +440,7 @@ function run(o, hubUrl, dump) {
     let up = false;
     sock.on('connect', () => {
       up = true; warned = false;
-      plc = sock; plcAt = `${host}:${port}`; rxBuf = Buffer.alloc(0); lastSeq = null; lastRx = mono();
+      plc = sock; plcAt = `${host}:${port}`; rxBuf = Buffer.alloc(0); lastSeq = null; lastRx = mono(); hist.told = false; skewTold = false;
       // ingenting går ut før den første datameldingen har fortalt hvordan kommandorammen skal se ut
       layout = null;
       sock.setNoDelay(true);
@@ -437,8 +482,9 @@ function run(o, hubUrl, dump) {
         if (rxGaps <= 5) log(`sequence jump: ${lastSeq} -> ${seq}`);
       }
       lastSeq = seq;
-      if (dump) { log(`<- PLC ${r.kind === KIND_NAMES ? 'names' : 'data'} (${r.frame.length} bytes)`); console.log(hexdump(r.frame)); }
+      if (dump) { log(`<- PLC ${['data', 'names', 'history'][r.kind]} (${r.frame.length} bytes)`); console.log(hexdump(r.frame)); }
       if (r.kind === KIND_NAMES) onNames(walkNames(r.frame, r.frame.length));
+      else if (r.kind === KIND_HIST) onHistory(decodeHistory(r.frame));
       else onDataFrame(decodeData(r.frame));
     }
     if (rxBuf.length > 4 * LEN_MAX) rxBuf = Buffer.alloc(0);   // kan ikke være en melding
@@ -465,6 +511,12 @@ function run(o, hubUrl, dump) {
   }
 
   function onDataFrame(d) {
+    // klokkeforskjellen, så historikken kan legges på denne maskinens klokke (se sendHistory)
+    skew = Date.now() - plcMs(d.dtl.ts, d.utc);
+    if (!skewTold && Math.abs(skew) > 5000) {
+      skewTold = true;
+      log(`note: the PLC clock is ${Math.round(Math.abs(skew) / 1000)} s ${skew > 0 ? 'behind' : 'ahead of'} this machine; the PLC history is placed by this machine's clock`);
+    }
     const key = d.layout.join(',');
     if (key !== layoutKey || !layout) {
       if (layoutKey && key !== layoutKey) event('info', `The PLC changed its sizes: ${describe(d.layout)}`);
@@ -475,6 +527,7 @@ function run(o, hubUrl, dump) {
       registerTags('layout');
       publishCmd();
       sendCmd('first message');
+      sendHistory();
     } else layout = d.layout;
     lastDtl = d.dtl; lastUtc = d.utc;
     if (!link) {
@@ -494,6 +547,76 @@ function run(o, hubUrl, dump) {
   }
   const describe = l => `tx ${l[0] * 8} bits, ${l[1]} words, ${l[2]} times, ${l[3]} ints, ${l[4]} dints, ${l[5]} reals; ` +
     `rx ${l[6] * 8} bits, ${l[7]} words, ${l[9]} ints, ${l[10]} dints, ${l[11]} reals`;
+
+  // ---- historikken: hele ringbufferen ved hver tilkobling, og så hver ny post (TCP_LINK.md §3.8)
+  function onHistory(h) {
+    if (hist.known && h.newest < hist.newest) {
+      // LinkHistory er lastet ned på nytt, og løpenumrene startet på 1 igjen: det adapteren har, er fra før
+      event('info', `The PLC history started again from #1 (it was at #${hist.newest})`);
+      hist.recs.clear();
+      hist.got = 0;
+    }
+    if (hist.known && h.clearedTo > hist.clearedTo) event('info', `The PLC history was cleared (up to #${h.clearedTo})`);
+    // poster som ble overskrevet i PLS-en før adapteren fikk dem: bufferen gikk rundt mens linken var nede
+    const had = Math.max(hist.got, h.clearedTo);
+    if (hist.got && h.oldest > had + 1) {
+      const n = h.oldest - had - 1;
+      event('info', `${n} change${n === 1 ? '' : 's'} in the PLC history ${n === 1 ? 'was' : 'were'} overwritten before ${n === 1 ? 'it' : 'they'} could be fetched (the PLC keeps ${h.capacity})`);
+    }
+    for (const r of h.records) {
+      const ms = plcMs(r.ts, h.utc), key = `${r.section}.${r.index}=${r.value}@${ms}`;
+      const old = hist.recs.get(r.recNo);
+      if (old && old.key !== key) histToHub.delete(r.recNo);   // samme løpenummer, en annen post: huben må få den
+      hist.recs.set(r.recNo, { key, ms, section: r.section, index: r.index, value: r.value });
+      if (r.recNo > hist.got) hist.got = r.recNo;
+    }
+    // bare det PLS-en fortsatt har: overskrevet, slettet og fra før en ny nedlasting faller bort
+    for (const n of [...hist.recs.keys()]) {
+      if (n < h.oldest || n > h.newest || n <= h.clearedTo) { hist.recs.delete(n); histToHub.delete(n); }
+    }
+    Object.assign(hist, { known: true, newest: h.newest, oldest: h.oldest, clearedTo: h.clearedTo, capacity: h.capacity });
+    if (!hist.told) {
+      hist.told = true;
+      const n = h.newest >= h.oldest ? h.newest - h.oldest + 1 : 0;
+      log(`PLC history: ${n ? `${n} change${n === 1 ? '' : 's'}, #${h.oldest} to #${h.newest}` : 'empty'} (room for ${h.capacity})`);
+    }
+    // ved tilkobling kommer bufferen i mange meldinger (16 poster i hver): send den samlet når alt er her
+    clearTimeout(histTimer);
+    if (Math.max(hist.got, h.clearedTo) >= h.newest) sendHistory();
+    else histTimer = setTimeout(sendHistory, 2000);
+  }
+
+  // Postene huben ikke har fått på denne forbindelsen, som punkter i historikken til taggene. PLS-tiden
+  // flyttes med klokkeforskjellen fra siste datamelding, så punktene havner riktig i forhold til det
+  // huben fikk direkte, også når de to klokkene ikke går likt. Huben setter dem inn på sin plass i tid,
+  // hopper over det den allerede har, og skriver i hendelsesloggen hvor mye som kom tilbake.
+  function sendHistory() {
+    clearTimeout(histTimer);
+    histTimer = null;
+    if (!hubOpen || !layout || skew === null) return;   // kalles igjen når alt er på plass
+    const series = {}, now_ = Date.now();
+    // posten følger med (løpenummer og PLS-tid), så huben kjenner igjen det den har fått før, og
+    // teller et word og bitene i det som én endring
+    const put = (name, at, v, ref) => (series[T(name)] = series[T(name)] || []).push([at, v, ref]);
+    let n = 0;
+    for (const [no, r] of hist.recs) {
+      if (histToHub.has(no)) continue;
+      histToHub.add(no);
+      const sec = HIST_SECTIONS[r.section];
+      if (!sec) {
+        if (!histWarned.has(r.section)) { histWarned.add(r.section); log(`warning: the PLC history has records of kind ${r.section}, which this adapter doesn't know; they are skipped`); }
+        continue;
+      }
+      const name = sec.s.tag(r.index);
+      if (!registered.has(T(name))) continue;   // plassen finnes ikke lenger (en mindre UDT)
+      const at = Math.min(now_, r.ms + skew);
+      const ref = `${no}@${r.ms}`;
+      put(name, at, sec.value(r.value), ref);
+      for (const bt of opt(name).bitList || []) put(bt.name, at, ((r.value >>> bt.bit) & 1) === 1, ref);
+      n++;
+    }
+    if (n) toHub({ type: 'restore', origin: 'the PLC history', series });
+  }
 
   // "info"-hendelser fra innstillingene: logges her ved hver endring. Advarsler og alarmer er hubens.
   function infoEvents(vals) {
@@ -636,7 +759,7 @@ function run(o, hubUrl, dump) {
 }
 
 // ================================================================ start
-module.exports = { SECTIONS, nextFrame, walkNames, decodeData, encodeCommands, splitUnit, cp1252, loadOptions };
+module.exports = { SECTIONS, nextFrame, walkNames, decodeData, decodeHistory, encodeCommands, splitUnit, cp1252, loadOptions };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

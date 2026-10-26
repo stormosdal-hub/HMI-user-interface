@@ -8,7 +8,8 @@
  *            { key, label, type: text|number|tag|tags|select|bool, default, options?, hint? }
  *   tags(w): taggene widgeten vil ha oppdateringer for
  *   mount(root, w, ctx): bygg DOM-en inni root og returner et håndtak:
- *            { update(tag, value, quality, ts), event(ev), reset(), destroy() }  (alle valgfrie)
+ *            { update(tag, value, quality, ts), event(ev), reset(), restored(series), destroy() }
+ *            (alle valgfrie; restored: huben har fått eldre punkter tilbake for disse taggene)
  *
  * ctx gir widgetene: mode() -> 'edit'|'run', write(tag, value), value(tag),
  *                    history(tag) -> Promise<[[ts,value],...]>, events() -> siste hendelser
@@ -847,7 +848,7 @@
       P.label('Trend'),
       { key: 'tags', label: 'Tags (comma separated)', type: 'tags', default: '' },
       { key: 'window', label: 'Time range (seconds)', type: 'number', default: 120,
-        hint: 'What the trend shows at first. The hub keeps the last few minutes; anything older needs a connected history database' },
+        hint: 'What the trend shows at first. The hub keeps the last 600 changes of each tag: minutes for a busy value, longer for one that seldom changes. Anything older needs a connected history database' },
       { key: 'timeControls', label: 'Time controls in Run mode', type: 'bool', default: true,
         hint: 'Buttons for 10 min to 7 days, back and forward in time, and Live' },
       { key: 'min', label: 'Min (empty = auto)', type: 'number', default: '' },
@@ -888,7 +889,7 @@
       const span = () => (view.live ? view.span : view.to - view.from);
       const longLive = () => view.live && view.span > 3600000;   // oppfriskes nå og da, ikke punkt for punkt
 
-      let seq = 0, refresh = 0;
+      let seq = 0, refresh = 0, reload = 0;
       async function load() {
         const my = ++seq, r = range(), width = Math.max(100, Math.round(cv.clientWidth || 400));
         note.textContent = 'Loading…';
@@ -1074,7 +1075,9 @@
         },
         // tagnavnene er endret
         relabel() { for (const x of series) x.li.textContent = x.last === null ? shown(x.name) : `${shown(x.name)} ${fmt(x.last, p.decimals)}`; },
-        destroy() { clearInterval(timer); clearTimeout(refresh); clearTimeout(first); cancelAnimationFrame(raf); ro.disconnect(); seq++; },
+        // huben har fått eldre punkter tilbake (f.eks. fra PLS-ens ringbuffer): hent tidsrommet på nytt
+        restored() { clearTimeout(reload); reload = setTimeout(load, 300); },
+        destroy() { clearInterval(timer); clearTimeout(refresh); clearTimeout(first); clearTimeout(reload); cancelAnimationFrame(raf); ro.disconnect(); seq++; },
       };
     },
   });

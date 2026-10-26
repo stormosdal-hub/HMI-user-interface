@@ -32,7 +32,7 @@ HMI-en tilbake til PLS-en. Alle nettlesere som åpner HMI-en, ser de samme tagge
 8. [Lagring til database](#8-lagring-til-database): hva huben holder i minnet, og hvordan en database kobles til
 9. [Tegninger (SVG)](#9-tegninger-svg) — hva en tegning trenger
 10. [Animasjoner (Three.js)](#10-animasjoner-threejs) — hva en kodesnutt trenger
-11. [Forbindelsen til PLS-en](#11-forbindelsen-til-pls-en) — [tcplink-adapter.js med navnene fra PLS-en](#tcplink-navnene-kommer-fra-pls-en), binary-adapter.js og layouten, og [eksempeladaptere](#andre-enheter-og-programmer) for andre enheter
+11. [Forbindelsen til PLS-en](#11-forbindelsen-til-pls-en) — [tcplink-adapter.js med navnene fra PLS-en](#tcplink-navnene-kommer-fra-pls-en), [historikken fra PLS-en](#historikken-fra-pls-en), binary-adapter.js og layouten, og [eksempeladaptere](#andre-enheter-og-programmer) for andre enheter
 12. [Referanse](#12-referanse) — protokoll, HTTP-API, prosjektfil, kommandolinje
 13. [Sikkerhet](#13-sikkerhet)
 14. [Feilsøking](#14-feilsøking)
@@ -266,11 +266,12 @@ sender den den nye verdien tilbake (*ekkoet*): verdien som nå står i kommandob
 PLS-en. Det er ekkoet alle HMI-er viser, så et betjeningselement vises først som omslått når
 adapteren har tatt imot det.
 
-**Hub.** Har listen over tagger og den siste verdien for hver tag, pluss omtrent 10 minutter
-historikk per numerisk tag (600 punkter). Den sender skrivinger videre til adapteren som eier
-taggen, tar vare på de siste 200 hendelsene og alarmene, regner ut beregnede tagger, og
-lagrer prosjektet og ressursene (assets) til det. Historikk og hendelser ligger bare i
-minnet, så de starter tomme etter en omstart.
+**Hub.** Har listen over tagger og den siste verdien for hver tag, pluss de siste 600
+endringene av hver numerisk tag (historikken trendene viser). Den sender skrivinger videre til
+adapteren som eier taggen, tar vare på de siste 200 hendelsene og alarmene, regner ut beregnede
+tagger, og lagrer prosjektet og ressursene (assets) til det. Historikk og hendelser ligger bare
+i minnet, så de starter tomme etter en omstart. Unntaket er det PLS-en har logget selv: det får
+huben tilbake fra adapteren (se [Historikken fra PLS-en](#historikken-fra-pls-en)).
 
 **Beregnet tag.** En tag med navnet `calc.<name>` som huben regner ut fra andre tagger med
 en formel. Se [7](#7-beregnede-verdier).
@@ -569,7 +570,9 @@ starter.
   for en trend som skal bli stående slik den er satt.
 - **Markøren:** pek på trenden for å lese tiden og verdien til hver linje der.
 - **Hvor punktene kommer fra:**
-  - **Huben:** den har de siste minuttene av hver tag i minnet.
+  - **Huben:** de siste 600 endringene av hver tag, i minnet. For en måling som endrer seg
+    hele tiden, er det noen minutter; for en bit som sjelden endres, mye lenger. Det PLS-en har
+    logget, kommer tilbake etter en omstart (se [Historikken fra PLS-en](#historikken-fra-pls-en)).
   - **Alt som er eldre:** bare fra en database som er koblet til huben (se
     [8](#8-lagring-til-database)). Uten den viser trenden det huben har, og sier fra om det.
 - **Hvordan den tegnes:**
@@ -706,15 +709,21 @@ nettlesere er lukket. En database som kobles til huben ([8](#8-lagring-til-datab
 
 Det finnes ingen database ennå. Det huben vet, ligger i minnet og forsvinner ved en omstart:
 
-- **Tagverdier:** de siste 600 punktene for hver numeriske tag (`HMI_HISTORY` endrer tallet,
-  se [12.4](#124-kommandolinje)). Trender viser derfor bare de siste minuttene.
+- **Tagverdier:** de siste 600 endringene av hver numeriske tag (`HMI_HISTORY` endrer tallet,
+  se [12.4](#124-kommandolinje)). For en måling som endrer seg hele tiden, er det bare de siste
+  minuttene.
 - **Hendelser:** de siste 200, og alarmlisten.
+- **Det PLS-en har logget:** endringene TcpLink logger i sin retentive ringbuffer, kommer
+  tilbake i hubens minne ved hver tilkobling ([Historikken fra PLS-en](#historikken-fra-pls-en)).
+  Det er et sikkerhetsnett for de siste endringene, ikke en database: bufferen har plass til et
+  fast antall.
 
 **En database kobles til huben som et eget program,** gjerne på en annen maskin. Det bruker
 den vanlige WebSocket-protokollen ([12.1](#121-websocket-protokoll)):
 
 - **For å få verdiene og hendelsene:** koble til som en skrivebeskyttet HMI
-  (`{"type":"hello","role":"hmi","readonly":true}`) og abonner på `*`.
+  (`{"type":"hello","role":"hmi","readonly":true}`) og abonner på `*`. Det som kommer tilbake
+  fra PLS-ens ringbuffer, kommer som `restored`, med PLS-ens tidspunkter.
 - **For å svare trendene:** koble til som en adapter med `"serves":["history"]` i `hello`.
   Ber en trend om et tidsrom som er eldre enn hubens minne, sender huben programmet en
   `query`, og det svarer med `queryResult`. Svarer det ikke innen 20 sekunder, viser trenden
@@ -1036,6 +1045,50 @@ Beregninger og skjermbilder som bruker taggene i venstre kolonne, må endres. ZS
 (`kv_1.zsw1_enabled` …) heter det samme, fra innstillingsfilen. Stopp `binary-adapter.js`
 før du starter `tcplink-adapter.js`: PLS-en tar imot én klient.
 
+### Historikken fra PLS-en
+
+![Historikken fra PLS-en: LinkHistory og TcpLink, tcplink-adapter.js, huben og HMI-en](docs/tcplink-history.svg)
+
+TcpLink logger endringene i de bits og words du velger ut med `histMask`, i en retentiv
+ringbuffer i PLS-en (`LinkHistory`, se `TCP_LINK.md` §3.8). Loggingen går hele tiden, også mens
+Pi-en er av, og ved hver tilkobling sender PLS-en hele bufferen. `tcplink-adapter.js` legger
+endringene tilbake i historikken til taggene i huben, så trendene viser det som skjedde mens
+Pi-en eller linken var borte.
+
+- **Hvilke tagger:** `kv_1.bit00` … for `txDigital.bits`, `kv_1.words_0` … for
+  `txDigital.words`, og bitene du har gitt navn i et word i innstillingsfilen
+  (`kv_1.zsw1_fault` fra `words_2`). Analoge verdier logges ikke i PLS-en ennå; når de gjør
+  det, er `HIST_SECTIONS` i `tcplink-adapter.js` stedet å legge dem til.
+- **Når:** ved hver tilkobling, altså etter et strømbrudd på Pi-en, et brudd på linken eller en
+  omstart av huben. Adapteren holder en kopi av det PLS-en har, og sender den til en hub som
+  har startet på nytt. Starter bare adapteren på nytt, har huben alt fra før, og ingenting
+  endres.
+- **Tiden:** hver endring står på PLS-ens eget tidspunkt. Går PLS-klokka feil i forhold til
+  Pi-en, flyttes tidspunktene med forskjellen målt på datameldingene, så de havner riktig i
+  forhold til resten av trenden. Adapterloggen sier fra når forskjellen er mer enn 5 s.
+- **Ingen dobbelpunkter:** huben kjenner igjen hver post (løpenummer og PLS-tid) og hopper over
+  det den har fra før. En endring den allerede fikk direkte, får PLS-ens tidspunkt i stedet for
+  tiden den kom fram.
+- **Åpne trender** henter tidsrommet sitt på nytt når noe har kommet tilbake.
+
+I hendelsesloggen:
+
+| Hendelse | Betydning |
+|---|---|
+| `Restored 12 changes from the PLC history (… to …)` | Så mange endringer fra PLS-en var nye for huben, og tidsrommet de dekker |
+| `5 changes in the PLC history were overwritten before they could be fetched (the PLC keeps 200)` | Bufferen gikk rundt mens linken var nede, så de eldste endringene var borte før adapteren fikk dem. Gjør bufferen større, eller logg færre signaler |
+| `The PLC history was cleared (up to #812)` | `histClear` fikk en stigende flanke. Det huben allerede har, blir stående |
+| `The PLC history started again from #1 (it was at #812)` | `LinkHistory` er lastet ned på nytt, for eksempel etter en endret UDT |
+
+Adapterloggen viser hva PLS-en har ved hver tilkobling:
+`PLC history: 37 changes, #776 to #812 (room for 200)`.
+
+- **Et word** logges som hele wordet i det øyeblikket en bit i masken endret seg. Bits
+  utenfor masken kan ha endret seg imellom uten å bli logget.
+- **Bare historikken:** verdien en tag har nå, kommer alltid fra datameldingene. Alarmlisten
+  og hendelsesloggen bygges ikke opp igjen av historikken, og beregnede tagger (`calc.*`) får
+  ingen historikk tilbake.
+
 ### Pakket binærdata
 
 `binary-adapter.js` gjør posisjonsbaserte binærdata om til navngitte tagger: posisjonen til en
@@ -1244,13 +1297,14 @@ forbindelse; `hello` sier hvilken av dem det er. Eksempeladapterne i
 | `{"type":"update","tag":"kv_1.speedAct","value":4096}` | adapter | Én verdi |
 | `{"type":"update","values":{"kv_1.speedAct":4096,"kv_1.bit05":true}}` | adapter | Flere verdier samtidig |
 | `{"type":"event","severity":"info"\|"warning"\|"alarm","message":"text"}` | adapter | En melding eller alarm til HMI-ene |
+| `{"type":"restore","origin":"the PLC history","series":{"kv_1.bit03":[[ts,true,"812@…"],...]}}` | adapter | Eldre punkter fra enheten selv, til historikken; verdien nå endres ikke. Det tredje feltet er valgfritt og sier hvilken post punktet kommer fra, så det samme sendt på nytt hoppes over. Se [Historikken fra PLS-en](#historikken-fra-pls-en) |
 | `{"type":"subscribe","tags":["kv_1.*","*"]}` | hmi | Motta oppdateringer. Gjeldende verdier sendes med en gang |
 | `{"type":"unsubscribe","tags":[...]}` | hmi | Slutt å motta dem |
 | `{"type":"write","tag":"kv_1.cmd_bit00","value":true}` | hmi | Be adapteren som eier taggen, om å endre noe |
 | `{"type":"ack","keys":["tag:kv_1.faultCode"]}` eller `{"type":"ack","all":true}` | hmi | Kvitter alarmer (ikke fra skrivebeskyttede HMI-er) |
 | `{"type":"historyRange","id":1,"tags":[...],"from":ms,"to":ms,"points":800}` | hmi | Punkter for et tidsrom, til en trend: fra hubens minne, eller sendt videre til en database (`query`) |
 | `{"type":"queryResult","id","series","unrecorded"}` | adapter med `serves` | Svaret på en `query`. `unrecorded`: tagger databasen ikke har |
-| `{"type":"history","tag":"kv_1.speedAct"}` | hmi | De siste 600 punktene |
+| `{"type":"history","tag":"kv_1.speedAct"}` | hmi | De siste 600 endringene |
 | `{"type":"checkCalc","id":1,"formula":"...","vars":{}}` | hmi | Sjekk en formel. Svaret er `calcCheck` |
 | `{"type":"list"}` / `{"type":"ping"}` | begge | Tagliste / keep-alive |
 
@@ -1266,6 +1320,7 @@ forbindelse; `hello` sier hvilken av dem det er. Eksempeladapterne i
 | `{"type":"write","tag","value","from"}` | adapter | En videresendt skriving: utfør den, og send så en `update` |
 | `{"type":"alarms","alarms":[{"key","source","severity","text","active","acked","since",...}]}` | hmi | Alarmlisten; sendes ved hello og etter hver endring |
 | `{"type":"historyRange","id","series":{"tag":[[ts,value],...]},"source","note"}` | hmi | Svar på historyRange. `null` som verdi er et hull (stale) |
+| `{"type":"restored","series":{"tag":[[ts,value],...]}}` | hmi | Punkter en adapter har gjenopprettet, og som var nye for huben. En trend med en av taggene henter tidsrommet sitt på nytt |
 | `{"type":"query","id","tags","from","to","points"}` | adapter med `serves` | Spørsmålet fra en trend, til en adapter som sa `"serves":["history"]` i sin hello |
 | `{"type":"calcCheck","id","ok","error","pos","deps","unknown","value"}` | hmi | Svar på checkCalc |
 | `{"type":"codes","codes":{"lists":{...}},"error"}` | hmi | Kodetekstene; sendes ved hello og etter hver endring |
@@ -1357,7 +1412,7 @@ node hub.js [port] [project file]
 |---|---|---|
 | Port | 8080 | `HMI_PORT` |
 | Prosjektfil | `config/hmi.json` inne i `hmi-core` | `HMI_CONFIG` |
-| Historikkpunkter per tag | 600 | `HMI_HISTORY` |
+| Endringer per tag i historikken | 600 | `HMI_HISTORY` |
 
 ```bash
 node adapters/tcplink-adapter.js [options.json] [ws://hub:8080] [--plc=ip:port] [--device=kv_1] [--no-commands] [--dump]
@@ -1430,7 +1485,8 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | En del av en tegning skifter ikke farge | Formen har ikke fyll, så bruk *Paint: stroke* eller gi den fyll i tegningen. Eller ID-en er endret; koblingseditoren viser manglende deler i rødt |
 | En animasjon forblir tom | Åpne kodeeditoren og les konsollen. Vanlige årsaker: en import fra en URL, eller rendering et annet sted enn i `hmi.stage()` / `hmi.container` |
 | "three.js is not installed" | Kjør `npm install` i `hmi-core` |
-| En trend viser bare de siste minuttene | Huben har bare de siste minuttene i minnet, og ingen database er koblet til. Se [8](#8-lagring-til-database) |
+| En trend viser bare de siste minuttene | Huben har de siste 600 endringene av hver tag i minnet, og ingen database er koblet til. For en måling som endrer seg hele tiden, er det noen minutter. Se [8](#8-lagring-til-database) |
+| Trendene får ikke tilbake det PLS-en har logget | Adapterloggen sier `PLC history: ...` ved hver tilkobling. Står det `empty`, logger PLS-en ingenting: sjekk `histMask`, og at `histNewest` øker når et signal endres. Sier loggen `Message from the PLC not understood`, er `tcplink-adapter.js` eldre enn PLS-blokken. Er historikken borte etter et strømbrudd på PLS-en, er ikke `LinkHistory` retentiv |
 | Et betjeningselement er grået ut | *Enabled when*-betingelsen er ikke oppfylt (hold musepekeren over for å se hvilken), eller enheten er frakoblet (etiketten sier *stale*) |
 | En alarm kommer tilbake hvert sekund | Verdien ligger og vipper ved grensen. Gi den hysterese i PLS-en, eller en `delay` i alarmen |
 | En alarm blir stående i listen | Den venter på kvittering, eller den er fortsatt aktiv. Bare alarmer som er både borte *og* kvittert, forsvinner fra listen |
@@ -1470,6 +1526,7 @@ HMI.register('mywidget', {
     return {
       update(tag, value, quality, ts) { out.textContent = value; },
       // event(ev) {}      hendelser og alarmer
+      // restored(series) {}  huben har fått eldre punkter tilbake for taggene (Trend henter på nytt)
       // destroy() {}      stopp timere
     };
   },
