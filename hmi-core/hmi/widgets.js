@@ -6,13 +6,15 @@
  *   size   : [bredde, høyde] når den plasseres første gang
  *   props  : skjema for egenskapspanelet
  *            { key, label, type: text|number|tag|tags|select|bool, default, options?, hint? }
- *   tags(w): taggene widgeten vil ha oppdateringer for
+ *   tags(w, known): taggene widgeten vil ha oppdateringer for; known er tagoversikten fra huben
+ *            (navn -> info). Med byPattern: true monteres widgeten på nytt når listen endres
  *   mount(root, w, ctx): bygg DOM-en inni root og returner et håndtak:
  *            { update(tag, value, quality, ts), event(ev), reset(), restored(series), destroy() }
  *            (alle valgfrie; restored: huben har fått eldre punkter tilbake for disse taggene)
  *
  * ctx gir widgetene: mode() -> 'edit'|'run', write(tag, value), value(tag),
- *                    history(tag) -> Promise<[[ts,value],...]>, events() -> siste hendelser
+ *                    history(tag) -> Promise<[[ts,value],...]>, events() -> siste hendelser,
+ *                    registry() -> tagoversikten (navn -> { dataType, label, ... })
  *
  * Widgeter ser aldri "${var}"-plassholdere — appen løser dem opp før mount().
  * Ny widgettype: kopier en av blokkene nedenfor og registrer en ny nøkkel.
@@ -1078,6 +1080,459 @@
         // huben har fått eldre punkter tilbake (f.eks. fra PLS-ens ringbuffer): hent tidsrommet på nytt
         restored() { clearTimeout(reload); reload = setTimeout(load, 300); },
         destroy() { clearInterval(timer); clearTimeout(refresh); clearTimeout(first); clearTimeout(reload); cancelAnimationFrame(raf); ro.disconnect(); seq++; },
+      };
+    },
+  });
+
+  // ---------------------------------------------------------------- tidslinje
+  // Digitale signaler over tid, ett felt per signal med en stolpe der signalet var på: for å se
+  // hva som var aktivt når. Dra for å gå bakover og framover i tid (og opp og ned i listen),
+  // rull med musehjulet eller klyp for å zoome. Punktene kommer fra huben som til Trend
+  // (historyRange), med et tidsrom ekstra på hver side, så et kort drag ikke venter på huben.
+  const LANES_MAX = 128;
+  const SPAN_MIN = 10e3, SPAN_MAX = 31 * 86400e3;
+  const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+  const globRe = s => new RegExp('^' + s.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
+  // "kv_1.*" tar med av/på-taggene (dataType boolean) som passer, sortert; et navn alene tas med
+  // som det er (på når verdien ikke er 0); "!kv_1.link" tar en tag eller en gruppe ut igjen.
+  // known: tagoversikten fra huben (navn -> info)
+  function timelineTags(spec, known) {
+    const out = [];
+    for (const part of String(spec || '').split(',').map(s => s.trim()).filter(Boolean)) {
+      const not = part[0] === '!', pat = not ? part.slice(1).trim() : part;
+      if (!pat) continue;
+      let hits = [pat];
+      if (pat.includes('*')) {
+        const re = globRe(pat);
+        hits = known ? [...known.values()].filter(t => (not || t.dataType === 'boolean') && re.test(t.name)).map(t => t.name) : [];
+        hits.sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+      }
+      for (const n of hits) {
+        const i = out.indexOf(n);
+        if (not) { if (i >= 0) out.splice(i, 1); } else if (i < 0) out.push(n);
+      }
+    }
+    return out;
+  }
+  // 4.2 s, 2 min 7 s, 15 min, 3 h 12 min, 2 d
+  const durText = ms => {
+    const s = Math.round(ms / 1000);
+    const two = (a, ua, c, uc) => (c ? `${a} ${ua} ${c} ${uc}` : `${a} ${ua}`);
+    if (ms < 10000) return `${+(ms / 1000).toFixed(1)} s`;
+    if (s < 60) return `${s} s`;
+    if (s < 3600) return two(Math.floor(s / 60), 'min', s % 60, 's');
+    if (s < 86400) return two(Math.floor(s / 3600), 'h', Math.floor(s % 3600 / 60), 'min');
+    return two(Math.floor(s / 86400), 'd', Math.floor(s % 86400 / 3600), 'h');
+  };
+  // klokkeslett med sekunder, og datoen når det ikke er i dag
+  const stamp = t => (new Date(t).toDateString() !== new Date().toDateString() ? dayOf(t) + ' ' : '') + clockOf(t, true);
+
+  H.register('timeline', {
+    name: 'Timeline', hint: 'Digital signals over time; drag and zoom', size: [520, 260],
+    props: [
+      P.label('Timeline'),
+      { key: 'tags', label: 'Signals (comma separated)', type: 'tags', default: '*',
+        hint: '* is every digital (on/off) tag, kv_1.* those of one device. A tag named on its own is on when it isn’t 0. !kv_1.link leaves one out. Up to 128 signals' },
+      { key: 'window', label: 'Time range (seconds)', type: 'number', default: 600,
+        hint: 'What it shows at first. In Run mode, drag sideways to go back in time, and use the mouse wheel or two fingers to zoom. The hub keeps the last 600 changes of each tag' },
+      { key: 'onlyActive', label: 'Hide signals that stay off', type: 'bool', default: false,
+        hint: 'Shows only the signals that were on somewhere in the time range' },
+      { key: 'timeControls', label: 'Time controls in Run mode', type: 'bool', default: true,
+        hint: 'Buttons for 10 min to 7 days, back and forward, zoom, and Live' },
+      P.color('On colour', '#43c483'),
+      P.labelSize(), P.textSize('Names and axis size'),
+    ],
+    // taggene følger tagoversikten (kv_1.*): appen monterer widgeten på nytt når listen endres
+    byPattern: true,
+    tags: (w, known) => timelineTags(w.props.tags, known).slice(0, LANES_MAX),
+    mount(root, w, ctx) {
+      const p = w.props;
+      const b = plate(root, p.label);
+      b.classList.add('wtrend', 'wtimeline');
+      const cv = el('canvas');
+      const foot = el('div', 'trend-foot');
+      const info = el('span', 'tl-info');
+      const note = el('div', 'trend-note');
+      foot.append(info);
+      b.append(cv, foot, note);
+      const run = () => ctx.mode() === 'run';
+      const all = timelineTags(p.tags, ctx.registry ? ctx.registry() : null);
+      const lanes = all.slice(0, LANES_MAX).map(name => ({ name, pts: [] }));
+      const byName = new Map(lanes.map(l => [l.name, l]));
+      const names = lanes.map(l => l.name);
+      const capped = all.length > lanes.length ? `Showing the first ${lanes.length} of ${all.length} signals: narrow the list in the settings` : '';
+      info.textContent = lanes.length ? `${lanes.length} signal${lanes.length === 1 ? '' : 's'}` : '';
+      info.title = 'Drag sideways to move in time, up and down to scroll the list. Mouse wheel or two fingers: zoom. Shift+wheel: move in time';
+      const fontPx = 11 * sizeScale(p.textSize);
+      const shown = name => (ctx.tagLabel && ctx.tagLabel(name)) || name;
+      const isOnV = v => v !== null && v !== undefined && v !== 0 && v !== false;
+      const sameState = (a, b2) => (a === null) === (b2 === null) && isOnV(a) === isOnV(b2);
+      // indeksen til siste punkt på eller før t; -1 når alle er senere
+      const at = (pts, t) => { let lo = 0, hi = pts.length - 1, i = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (pts[m][0] <= t) { i = m; lo = m + 1; } else hi = m - 1; } return i; };
+
+      // ---- hva som vises: live, eller en fast strekning [fra, til]
+      let view = { live: true, span: clamp(num(p.window, 600) * 1000, SPAN_MIN, SPAN_MAX) };
+      const range = () => (view.live ? { to: Date.now(), from: Date.now() - view.span } : { from: view.from, to: view.to });
+      const span = () => (view.live ? view.span : view.to - view.from);
+
+      // ---- punktene: det som vises, og like mye på hver side (men ikke etter nå)
+      let seq = 0, loadTimer = 0, reload = 0;
+      let loaded = null;   // { from, to, span } for det som sist ble hentet
+      let edge = true;     // det som er hentet, rekker fram til nå: nye verdier legges til
+      const covered = () => {
+        if (!loaded) return false;
+        const r = range();
+        return Math.abs(loaded.span - span()) < 1 && r.from >= loaded.from && (r.to <= loaded.to || edge);
+      };
+      async function load() {
+        clearTimeout(loadTimer);
+        if (!names.length) return;
+        const my = ++seq, r = range(), s = r.to - r.from, now = Date.now();
+        const from = r.from - s, to = Math.min(now, r.to + s);
+        const points = Math.min(4000, Math.max(300, Math.round((cv.clientWidth || 400) * 3)));
+        if (!loaded) note.textContent = 'Loading…';
+        const parts = [];
+        for (let i = 0; i < names.length; i += 8) parts.push(names.slice(i, i + 8));   // huben tar 8 tagger per spørsmål
+        let res;
+        try { res = await Promise.all(parts.map(x => ctx.historyRange(x, from, to, points))); }
+        catch (e) { res = [{ series: {}, error: e.message }]; }
+        if (my !== seq) return;   // et nyere spørsmål er stilt siden
+        const series = Object.assign({}, ...res.map(x => x.series || {}));
+        for (const l of lanes) {
+          const got = series[l.name] || [];
+          l.pts = to === now ? got.concat(l.pts.filter(x => x[0] > to)) : got;   // behold det som kom i mellomtiden
+        }
+        loaded = { from, to, span: s };
+        edge = to === now;
+        const bad = res.find(x => x.error), said = res.find(x => x.note);
+        note.textContent = [bad ? 'History: ' + bad.error : said ? said.note : '', capped].filter(Boolean).join('. ');
+        note.className = 'trend-note' + (note.textContent ? ' warn' : '');
+        schedule();
+      }
+      const loadSoon = () => { clearTimeout(loadTimer); loadTimer = setTimeout(load, 200); };
+
+      // ---- flytte og zoome
+      function setView(from, to) {
+        const s = clamp(to - from, SPAN_MIN, SPAN_MAX);
+        view = from + s >= Date.now() ? { live: true, span: s } : { live: false, from, to: from + s };
+        syncTools();
+        if (!covered()) loadSoon();
+        schedule();
+      }
+      // factor > 1 zoomer ut. Live står nå fast i høyre kant; ellers står tiden ved `anchor` stille
+      function zoom(anchor, factor) {
+        const r = range(), s = r.to - r.from, ns = clamp(s * factor, SPAN_MIN, SPAN_MAX);
+        if (ns === s) return;
+        if (view.live) { view = { live: true, span: ns }; syncTools(); loadSoon(); schedule(); return; }
+        const a = anchor == null ? (r.from + r.to) / 2 : anchor;
+        const from = a - (a - r.from) * ns / s;
+        setView(from, from + ns);
+      }
+      const pan = f => { const r = range(), d = f * (r.to - r.from); setView(r.from + d, r.to + d); };
+
+      // ---- tidskontrollene (Run-modus)
+      const tools = el('div', 'trend-tools');
+      const rangeLabel = el('span', 'trend-range');
+      const btn = (text, title, fn) => { const x = el('button', null, text); x.type = 'button'; x.title = title; x.addEventListener('click', e => { e.stopPropagation(); fn(); }); return x; };
+      const rangeBtns = RANGES.map(([t, s]) => btn(t, `The last ${t}, live`, () => { view = { live: true, span: s * 1000 }; syncTools(); load(); }));
+      const back = btn('◀', 'Back in time', () => pan(-0.5));
+      const fwd = btn('▶', 'Forward in time', () => pan(0.5));
+      const zoomOut = btn('−', 'Zoom out', () => zoom(null, 2));
+      const zoomIn = btn('+', 'Zoom in', () => zoom(null, 0.5));
+      const liveBtn = btn('Live', 'Back to now', () => { view = { live: true, span: span() }; syncTools(); load(); });
+      function syncTools() {
+        rangeBtns.forEach((x, i) => x.classList.toggle('on', view.live && view.span === RANGES[i][1] * 1000));
+        fwd.disabled = view.live;
+        zoomIn.disabled = span() <= SPAN_MIN;
+        zoomOut.disabled = span() >= SPAN_MAX;
+        liveBtn.hidden = view.live;
+        const r = range();
+        // live: hvor langt tilbake, når ingen av knappene passer (etter en zoom)
+        rangeLabel.textContent = view.live ? (RANGES.some(x => x[1] * 1000 === view.span) ? '' : `Last ${durText(view.span)}`)
+          : `${dayOf(r.from)} ${clockOf(r.from, span() < 3600000)} – ${dayOf(r.to) === dayOf(r.from) ? '' : dayOf(r.to) + ' '}${clockOf(r.to, span() < 3600000)} (${durText(span())})`;
+      }
+      if (p.timeControls !== false && run()) {
+        tools.append(rangeLabel, ...rangeBtns, back, fwd, zoomOut, zoomIn, liveBtn);
+        foot.append(tools);
+      }
+      syncTools();
+
+      // ---- pekeren: dra, klyp, hjul, og markøren med signalet under (Run-modus)
+      let L = { x0: 0, x1: 1, y0: 0, y1: 1, rowH: 20, W: 1, Hh: 1 };   // fra siste tegning
+      let scrollY = 0, hover = null, drag = null, pinch = null;
+      const ptrs = new Map();
+      // i lerretets egne piksler: Run-modus skalerer hele skjermbildet
+      const local = e => { const r = cv.getBoundingClientRect(), k = r.width / (cv.clientWidth || 1) || 1; return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }; };
+      const timeAt = (x, r) => r.from + clamp((x - L.x0) / (L.x1 - L.x0 || 1), 0, 1) * (r.to - r.from);
+      const startDrag = pt => { const r = range(); drag = { start: pt, from: r.from, to: r.to, scrollY, moved: false }; };
+      cv.addEventListener('pointerdown', e => {
+        if (!run() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+        cv.setPointerCapture(e.pointerId);
+        ptrs.set(e.pointerId, local(e));
+        if (ptrs.size === 1) startDrag(local(e));
+        else if (ptrs.size === 2) {
+          const [a, c] = [...ptrs.values()], r = range();
+          pinch = { d: Math.hypot(a.x - c.x, a.y - c.y) || 1, at: timeAt((a.x + c.x) / 2, r), f: ((a.x + c.x) / 2 - L.x0) / (L.x1 - L.x0 || 1), span: r.to - r.from };
+          drag = null;
+        }
+        e.preventDefault();
+      });
+      cv.addEventListener('pointermove', e => {
+        if (!run()) return;
+        const pt = local(e);
+        if (ptrs.has(e.pointerId)) ptrs.set(e.pointerId, pt);
+        if (pinch && ptrs.size >= 2) {
+          const [a, c] = [...ptrs.values()];
+          const ns = clamp(pinch.span * pinch.d / (Math.hypot(a.x - c.x, a.y - c.y) || 1), SPAN_MIN, SPAN_MAX);
+          const from = pinch.at - clamp(pinch.f, 0, 1) * ns;
+          setView(from, from + ns);
+          return;
+        }
+        if (drag) {
+          const dx = pt.x - drag.start.x, dy = pt.y - drag.start.y;
+          if (!drag.moved && Math.hypot(dx, dy) < 4) return;
+          drag.moved = true;
+          hover = null;
+          cv.classList.add('dragging');
+          const dt = -dx / (L.x1 - L.x0 || 1) * (drag.to - drag.from);
+          scrollY = drag.scrollY - dy;
+          setView(drag.from + dt, drag.to + dt);
+          return;
+        }
+        hover = pt;
+        schedule();
+      });
+      const release = e => {
+        if (!ptrs.delete(e.pointerId)) return;
+        if (drag && !drag.moved && e.type === 'pointerup') { hover = local(e); schedule(); }   // et trykk: markøren der
+        if (ptrs.size < 2) pinch = null;
+        if (!ptrs.size) { drag = null; cv.classList.remove('dragging'); }
+        else if (!drag) { startDrag([...ptrs.values()][0]); drag.moved = true; }   // fra klyp til dra
+      };
+      cv.addEventListener('pointerup', release);
+      cv.addEventListener('pointercancel', release);
+      cv.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !ptrs.size) { hover = null; schedule(); } });
+      cv.addEventListener('wheel', e => {
+        if (!run()) return;
+        e.preventDefault();
+        const pt = local(e), k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+        const dx = e.deltaX * k, dy = e.deltaY * k;
+        if (!dx && !dy) return;
+        if (pt.x < L.x0) { scrollY += dy || dx; schedule(); return; }   // over navnene: rull listen
+        const r = range();
+        if (e.shiftKey || Math.abs(dx) > Math.abs(dy)) {
+          const d = (Math.abs(dx) > Math.abs(dy) ? dx : dy) / (L.x1 - L.x0 || 1) * (r.to - r.from);
+          return setView(r.from + d, r.to + d);
+        }
+        zoom(timeAt(pt.x, r), Math.exp(dy * (e.ctrlKey ? 0.01 : 0.0015)));   // ctrl: klyp på styreflaten
+      }, { passive: false });
+
+      // ---- tegningen
+      let raf = 0;
+      const schedule = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
+      const timer = setInterval(() => { if (view.live) schedule(); }, 1000);
+      const fitCache = new Map();
+      function fitText(g, s, width) {
+        const key = s + '|' + width + '|' + g.font;
+        let r = fitCache.get(key);
+        if (r === undefined) {
+          r = s;
+          if (g.measureText(s).width > width) { while (r.length > 1 && g.measureText(r + '…').width > width) r = r.slice(0, -1); r += '…'; }
+          if (fitCache.size > 500) fitCache.clear();
+          fitCache.set(key, r);
+        }
+        return r;
+      }
+      // det siste punktet gjelder fram til nå, eller til slutten av det som er hentet
+      const holdEnd = () => (edge || !loaded ? Date.now() : loaded.to);
+      const wasOn = (l, from, to) => {
+        const pts = l.pts, end = holdEnd();
+        for (let i = Math.max(0, at(pts, from)); i < pts.length && pts[i][0] <= to; i++) {
+          if (isOnV(pts[i][1]) && (i + 1 < pts.length ? pts[i + 1][0] : end) > from) return true;
+        }
+        return false;
+      };
+      // hvor lenge verdien ved t holdt seg: fra punktet der den begynte, til det neste som skiller seg ut
+      function stretch(l, t) {
+        const pts = l.pts, i = at(pts, t);
+        if (i < 0) return null;
+        const v = pts[i][1];
+        let a = i, z = i + 1;
+        while (a > 0 && sameState(pts[a - 1][1], v)) a--;
+        while (z < pts.length && sameState(pts[z][1], v)) z++;
+        return { v, from: pts[a][0], fromKnown: !(a === 0 && loaded && pts[0][0] <= loaded.from), to: z < pts.length ? pts[z][0] : null };
+      }
+      let shownLanes = lanes;
+
+      function draw() {
+        const dpr = window.devicePixelRatio || 1;
+        const W = cv.clientWidth, Hh = cv.clientHeight;
+        if (!W || !Hh) return;
+        if (cv.width !== W * dpr || cv.height !== Hh * dpr) { cv.width = W * dpr; cv.height = Hh * dpr; }
+        const g = cv.getContext('2d');
+        g.setTransform(dpr, 0, 0, dpr, 0, 0);
+        g.clearRect(0, 0, W, Hh);
+        const css = getComputedStyle(root);
+        const col = (name, d) => css.getPropertyValue(name).trim() || d;
+        const soft = col('--line-soft', '#2b323b'), line = col('--line', '#3a434f');
+        const ink = col('--ink', '#e7eaee'), ink2 = col('--ink-2', '#aab3be'), ink3 = col('--ink-3', '#6f7a87');
+        const onCol = p.color || col('--ok', '#43c483');
+        g.font = `${fontPx}px ${css.fontFamily || 'sans-serif'}`;
+        g.lineWidth = 1;
+        const r = range(), tStart = r.from, tEnd = r.to, ms = tEnd - tStart, now = Date.now();
+        shownLanes = p.onlyActive ? lanes.filter(l => wasOn(l, tStart, tEnd)) : lanes;
+        // feltene: navnene til venstre, tidsaksen nederst, en rullefelt-strek når listen er for lang
+        const rowH = Math.round(fontPx * 1.9), padB = Math.ceil(fontPx) + 8;
+        let nameW = 0;
+        for (const l of shownLanes) nameW = Math.max(nameW, g.measureText(shown(l.name)).width);
+        nameW = Math.round(clamp(nameW + 16, 48, W * 0.4));
+        const y0 = 0, y1 = Hh - padB, over = shownLanes.length * rowH - (y1 - y0);
+        const x0 = nameW, x1 = W - (over > 0 ? 8 : 2);
+        scrollY = clamp(scrollY, 0, Math.max(0, over));
+        L = { x0, x1, y0, y1, rowH, W, Hh };
+        const X = t => x0 + (t - tStart) / (ms || 1) * (x1 - x0);
+
+        // tidsaksen: et rundt steg som gir plass til etikettene, på lokale klokkeslett
+        const minGap = g.measureText(ms >= 86400000 * 2 ? '00.00 00:00' : '00:00:00').width + 18;
+        const step = TICKS.find(s => s / ms * (x1 - x0) >= minGap) || TICKS[TICKS.length - 1];
+        const off = new Date(tStart).getTimezoneOffset() * 60000;
+        g.strokeStyle = soft;
+        g.fillStyle = ink3;
+        g.textAlign = 'center';
+        g.textBaseline = 'top';
+        for (let t = Math.ceil((tStart - off) / step) * step + off; t <= tEnd; t += step) {
+          const x = Math.round(X(t)) + 0.5;
+          g.beginPath(); g.moveTo(x, y0); g.lineTo(x, y1); g.stroke();
+          const midnight = clockOf(t) === '00:00';
+          const text = step >= 86400000 ? dayOf(t) : midnight && ms > 3600000 ? dayOf(t) : clockOf(t, step < 60000);
+          const tw = g.measureText(text).width / 2;
+          if (x - tw >= x0 - 4 && x + tw <= W) g.fillText(text, x, y1 + 4);
+        }
+
+        // ett felt per signal: en stolpe der det var på, en tynn strek der det var av,
+        // stiplet der enheten var frakoblet, ingenting før det første punktet
+        const hovLane = run() && hover && hover.y >= y0 && hover.y < y1 ? Math.floor((hover.y - y0 + scrollY) / rowH) : -1;
+        const end = Math.min(holdEnd(), tEnd);
+        const inset = Math.round(rowH * 0.2);
+        g.save();
+        g.beginPath(); g.rect(0, y0, W, y1 - y0); g.clip();
+        g.textAlign = 'left';
+        g.textBaseline = 'middle';
+        shownLanes.forEach((l, i) => {
+          const y = y0 + i * rowH - scrollY;
+          if (y + rowH < y0 || y > y1) return;
+          if (i === hovLane || i % 2) { g.fillStyle = i === hovLane ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.025)'; g.fillRect(0, y, x1, rowH); }
+          g.fillStyle = ink2;
+          g.fillText(fitText(g, shown(l.name), nameW - 12), 6, y + rowH / 2);
+          const pts = l.pts;
+          for (let k = Math.max(0, at(pts, tStart)); k < pts.length; k++) {
+            const t = pts[k][0];
+            if (t > tEnd) break;
+            const t2 = k + 1 < pts.length ? pts[k + 1][0] : end;
+            if (t2 <= tStart) continue;
+            const v = pts[k][1], a = X(Math.max(t, tStart)), z = X(Math.min(t2, tEnd));
+            if (v === null) {
+              g.strokeStyle = ink3;
+              g.setLineDash([3, 3]);
+              g.beginPath(); g.moveTo(a, y + rowH / 2); g.lineTo(z, y + rowH / 2); g.stroke();
+              g.setLineDash([]);
+            } else if (isOnV(v)) {
+              g.fillStyle = onCol;
+              g.fillRect(a, y + inset, Math.max(1.5, z - a), rowH - 2 * inset);   // også en kort puls synes
+            } else {
+              g.fillStyle = line;
+              g.fillRect(a, y + rowH - inset - 1, Math.max(0, z - a), 1);
+            }
+          }
+        });
+        g.restore();
+        g.strokeStyle = line;
+        g.beginPath(); g.moveTo(x0 - 0.5, y0); g.lineTo(x0 - 0.5, y1); g.stroke();
+        if (over > 0) {
+          const total = shownLanes.length * rowH, th = Math.max(16, (y1 - y0) * (y1 - y0) / total);
+          g.fillStyle = ink3;
+          g.fillRect(W - 5, y0 + scrollY / over * (y1 - y0 - th), 3, th);
+        }
+        if (!shownLanes.length) {
+          g.fillStyle = ink3;
+          g.textAlign = 'center';
+          g.textBaseline = 'middle';
+          const why = lanes.length ? 'No signal was on in this time range'
+            : String(p.tags || '').trim() ? `No digital tags match “${String(p.tags).trim()}” yet` : 'Choose the signals in the settings';
+          g.fillText(fitText(g, why, W - 16), W / 2, (y0 + y1) / 2);
+        }
+
+        // markøren: tiden nederst, og hvor lenge signalet under pekeren var på eller av
+        if (!run() || !hover) return;
+        const l = hovLane >= 0 ? shownLanes[hovLane] : null;
+        const lh = fontPx + 5;
+        const tip = (rows, colors, x, y) => {
+          const bw = Math.max(...rows.map(t => g.measureText(t).width)) + 16, bh = rows.length * lh + 8;
+          const bx = x + 14 + bw > W ? Math.max(2, x - bw - 10) : x + 14;
+          const by = y + bh + 4 > y1 ? Math.max(2, y - bh - 4) : y + 4;
+          g.fillStyle = 'rgba(20, 24, 29, 0.94)';
+          g.fillRect(bx, by, bw, bh);
+          g.strokeStyle = line;
+          g.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+          g.textAlign = 'left';
+          g.textBaseline = 'top';
+          rows.forEach((t, i) => { g.fillStyle = colors[i] || ink2; g.fillText(t, bx + 8, by + 4 + i * lh); });
+        };
+        const title = l ? shown(l.name) + (shown(l.name) !== l.name ? `  (${l.name})` : '') : '';
+        if (hover.x < x0) { if (l) tip([title], [ink], hover.x, hover.y); return; }
+        if (hover.x > x1) return;
+        const t = tStart + (hover.x - x0) / (x1 - x0) * ms;
+        g.strokeStyle = ink2;
+        g.setLineDash([3, 3]);
+        g.beginPath(); g.moveTo(Math.round(hover.x) + 0.5, y0); g.lineTo(Math.round(hover.x) + 0.5, y1); g.stroke();
+        g.setLineDash([]);
+        const when = stamp(t), ww = g.measureText(when).width + 10, wx = clamp(hover.x - ww / 2, x0, W - ww);
+        g.fillStyle = 'rgba(20, 24, 29, 0.95)';
+        g.fillRect(wx, y1 + 1, ww, padB - 1);
+        g.fillStyle = ink;
+        g.textAlign = 'left';
+        g.textBaseline = 'top';
+        g.fillText(when, wx + 5, y1 + 4);
+        if (!l || t > now) return;
+        const s = stretch(l, t);
+        if (!s) return tip([title, 'No data this far back'], [ink], hover.x, hover.y);
+        const on = isOnV(s.v);
+        const what = s.v === null ? 'Offline' : (on ? 'On' : 'Off') + (typeof s.v === 'number' && s.v !== 0 && s.v !== 1 ? ` (${s.v})` : '');
+        const until = s.to !== null ? s.to : edge ? null : undefined;   // null: fortsatt slik nå; undefined: ukjent
+        const rows = [title, `${what}  ${s.fromKnown ? '' : 'before '}${stamp(s.from)} – ${until === null ? 'now' : until === undefined ? '…' : stamp(until)}`];
+        if (until !== undefined) rows.push(`${s.fromKnown ? '' : 'at least '}${durText((until === null ? now : until) - s.from)}`);
+        tip(rows, [ink, on ? onCol : ink2, ink2], hover.x, hover.y);
+      }
+
+      // første lasting når widgeten er på siden: lerretets bredde avgjør hvor mange punkter vi ber om
+      const first = setTimeout(load);
+      const ro = new ResizeObserver(() => schedule());
+      ro.observe(cv);
+      return {
+        update(name, v, q, ts) {
+          const l = byName.get(name);
+          if (!l || !edge) return;   // en strekning i fortiden: en ny verdi hører ikke hjemme der
+          const t = ts || Date.now();
+          const val = q === 'bad' || v === undefined || v === null ? null
+            : typeof v === 'number' ? v : typeof v === 'boolean' ? (v ? 1 : 0) : truthy(v) ? 1 : 0;
+          const pts = l.pts, last = pts[pts.length - 1];
+          if (last && last[1] === val) return;
+          if (last && t < last[0]) pts.splice(at(pts, t) + 1, 0, [t, val]);
+          else pts.push([t, val]);
+          // fjern det som er langt utenfor, men behold verdien som holdes fra før
+          if (view.live) {
+            const cut = Date.now() - 3 * view.span;
+            let i = 0;
+            while (i + 1 < pts.length && pts[i + 1][0] < cut) i++;
+            if (i) pts.splice(0, i);
+          }
+          schedule();
+        },
+        // tagnavnene er endret
+        relabel() { fitCache.clear(); schedule(); },
+        // huben har fått eldre punkter tilbake (f.eks. fra PLS-ens ringbuffer): hent tidsrommet på nytt
+        restored() { clearTimeout(reload); reload = setTimeout(load, 300); },
+        destroy() { clearInterval(timer); clearTimeout(first); clearTimeout(loadTimer); clearTimeout(reload); cancelAnimationFrame(raf); ro.disconnect(); seq++; },
       };
     },
   });

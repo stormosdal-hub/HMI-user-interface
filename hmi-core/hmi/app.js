@@ -276,6 +276,8 @@
     value: tag => state.values.get(tag),
     // ditt eget navn på en tag (tagnavn), eller ''
     tagLabel: tag => { const t = state.tags.get(tag); return (t && t.label) || ''; },
+    // tagoversikten fra huben (navn -> { dataType, label, ... }), for widgeter som velger tagger med et mønster
+    registry: () => state.tags,
     history(tag) {
       return new Promise(resolve => {
         if (!state.connected) return resolve([]);
@@ -332,7 +334,7 @@
       root.append(el('div', 'plate', w.type), el('div', 'wbody', 'Unknown widget type'));
     } else {
       const rw = resolved(w);
-      tags = def.tags(rw).filter(Boolean);
+      tags = def.tags(rw, state.tags).filter(Boolean);
       if (/^#[0-9a-f]{3,8}$/i.test(rw.props.color || '')) root.style.setProperty('--accent', rw.props.color);
       for (const [key, cssVar] of SIZE_VARS) {
         const f = H.helpers.sizeScale(rw.props[key]);
@@ -1626,6 +1628,12 @@
           if (labels !== state.labelsKey) { state.labelsKey = labels; for (const w of state.mounted.values()) if (w.handle.relabel) w.handle.relabel(); }
         }
         for (const id of state.mounted.keys()) markCalc(id);
+        // widgeter som velger taggene sine med et mønster (Timeline: kv_1.*): monteres på nytt når
+        // mønsteret treffer andre tagger enn sist
+        for (const m of [...state.mounted.values()]) {
+          const def = H.widgets[m.widget.type];
+          if (def && def.byPattern && def.tags(resolved(m.widget), state.tags).filter(Boolean).join('|') !== m.tags.join('|')) remountWidget(m.widget);
+        }
         if (state.announceCalcs) {
           state.announceCalcs = false;
           const all = [...state.tags.values()].filter(t => t.source === 'calc');

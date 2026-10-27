@@ -424,6 +424,7 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
 | Slider | 1 tag | tall | Skriver når du slipper. [Sikrere betjening](#sikrere-betjening) |
 | Number input | 1 tag | tall | Skriv inn en verdi, trykk Set. [Sikrere betjening](#sikrere-betjening) |
 | Trend | opptil 3 tagger | — | Et tidsrom fra minutter til uker; tidsknapper og en markør i Run-modus; fast eller automatisk skala, én farge per linje. Se [Trender](#trender-over-timer-og-dager) |
+| Timeline | opptil 128 av/på-tagger | — | Ett felt per digitalt signal, med en stolpe der det var på. Dra for å gå bakover i tid, rull eller klyp for å zoome; markøren viser når signalet slo seg på og av. Se [Tidslinje](#tidslinje-for-digitale-signaler) |
 | Event log | hendelser | — | Filtrer på kildeprefiks og laveste alvorlighetsgrad |
 | Alarm list | alarmer | — | De aktive og ukvitterte alarmene, med Ack; filtrer på kilde og alvorlighetsgrad. Se [Alarmer](#alarmer-og-kvittering) |
 | Drawing | mange tagger | mange tagger | En SVG med en koblingstabell — se [9](#9-tegninger-svg) |
@@ -581,7 +582,48 @@ starter.
   - **Hull:** der en enhet var frakoblet.
   - **Topper:** i lange tidsrom dekker hvert punkt en periode og tar vare på laveste og
     høyeste verdi, så en kort topp vises fortsatt over en uke.
-- **Biter også:** true og false tegnes som 1 og 0.
+- **Biter også:** true og false tegnes som 1 og 0. For mer enn tre biter, se
+  [Tidslinje](#tidslinje-for-digitale-signaler).
+
+### Tidslinje for digitale signaler
+
+En Timeline viser av/på-signaler over tid, ett felt per signal: en stolpe der signalet var
+på, en tynn strek der det var av. Den er laget for å se hva som var aktivt når, for eksempel
+hva som skjedde rett før en stans.
+
+- **Signals** i innstillingene, med komma mellom:
+  - **`*`** er alle av/på-taggene (dataType boolean), og **`kv_1.*`** de fra én enhet.
+    Grupper sorteres etter navn, og en ny tag i gruppen kommer med av seg selv når en adapter
+    registrerer den.
+  - **Et tagnavn alene** tas med som det er, og er på når verdien ikke er 0. Et statusord
+    eller en feilkode kan altså også stå der.
+  - **`!kv_1.link`** tar en tag eller en gruppe ut igjen: `kv_1.*, !kv_1.cmd_*`.
+  - **Opptil 128 signaler.** Er det flere, vises de første, og widgeten sier fra.
+- **Navnene** til venstre er taggens eget navn (tagnavn) eller navnet fra PLS-en, ellers
+  tagnavnet.
+- **I Run-modus:**
+  - **Dra sidelengs** for å gå bakover og framover i tid. Opp og ned ruller listen når den er
+    lengre enn widgeten.
+  - **Musehjulet** zoomer inn og ut rundt pekeren. Shift+hjul, eller et sveip sidelengs på en
+    styreflate, flytter i tid. Over navnene ruller hjulet listen.
+  - **Berøringsskjerm:** én finger drar, to fingre zoomer.
+  - **Knappene:** *10 min · 1 h · 8 h · 24 h · 7 d* viser den siste perioden, live. **◀ ▶**
+    flytter et halvt tidsrom, **− +** zoomer, og **Live** går tilbake til nå. Fra 10 sekunder
+    til 31 dager.
+  - **Markøren:** pek på et felt, eller trykk på det på en berøringsskjerm. Den viser tiden der,
+    når signalet slo seg på og av, og hvor lenge det varte: `On 13:13:37 – now, 5 min 6 s`.
+  - **Live** følger nå, med den høyre kanten fast. Et drag bakover gir et fast tidsrom, og et
+    drag forbi nå går tilbake til live.
+- **Hide signals that stay off:** viser bare signalene som var på et sted i tidsrommet, så en
+  lang liste blir kort.
+- **Hvordan den tegnes:**
+  - **Ingenting** før det første punktet huben har for signalet.
+  - **Stiplet:** enheten var frakoblet. Bare det siden selv så; huben husker ikke frakoblingene.
+  - **Korte pulser** blir minst 1,5 piksler brede, så de synes også over en uke.
+- **Hvor langt tilbake:** som for trender. Huben har de siste 600 endringene av hver tag, og
+  for en bit som sjelden endres, er det lenge. Det PLS-en har logget, kommer tilbake etter en
+  omstart (se [Historikken fra PLS-en](#historikken-fra-pls-en)). Eldre enn det krever en
+  database (se [8](#8-lagring-til-database)).
 
 **Fargeterskler** (Gauge, Bar) er en liste med `value → colour`:
 - **Regelen er "på eller over".** Forbi en terskel får buen, viseren eller stolpen og
@@ -1378,8 +1420,8 @@ Navn på assets kan bruke bokstaver, sifre, `_`, `.` og `-`, med filtypene `.svg
 `"editCode"` på toppnivå inneholder passkoden for redigering (tom for ingen).
 
 **Widgettyper:** `card`, `text`, `value`, `gauge`, `bar`, `led` (Indicator), `switch`,
-`button`, `slider`, `input` (Number input), `trend`, `events` (Event log), `svg` (Drawing),
-`anim` (Animation).
+`button`, `slider`, `input` (Number input), `trend`, `timeline`, `events` (Event log),
+`svg` (Drawing), `anim` (Animation).
 
 **Kort** har fanene sine i `props.tabs` som `[{ "id": "ov", "name": "Overview" }, ...]`. En
 widget på et kort har `"parent"` (kortets id) og `"tab"` (en fane-id), og `x`/`y` måles
@@ -1486,6 +1528,8 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | En animasjon forblir tom | Åpne kodeeditoren og les konsollen. Vanlige årsaker: en import fra en URL, eller rendering et annet sted enn i `hmi.stage()` / `hmi.container` |
 | "three.js is not installed" | Kjør `npm install` i `hmi-core` |
 | En trend viser bare de siste minuttene | Huben har de siste 600 endringene av hver tag i minnet, og ingen database er koblet til. For en måling som endrer seg hele tiden, er det noen minutter. Se [8](#8-lagring-til-database) |
+| En tidslinje er tom fram til et tidspunkt | Huben har ingen verdi for signalet før det: huben startet, eller adapteren koblet til, da. Det PLS-en har logget i ringbufferen, kommer tilbake (se [Historikken fra PLS-en](#historikken-fra-pls-en)); andre signaler starter når adapteren kobler til |
+| Et signal mangler i tidslinjen | En gruppe som `kv_1.*` tar bare med av/på-tagger: skriv navnet på et tall alene. Over 128 signaler vises de første; gjør listen kortere, eller ta noen ut med `!` |
 | Trendene får ikke tilbake det PLS-en har logget | Adapterloggen sier `PLC history: ...` ved hver tilkobling. Står det `empty`, logger PLS-en ingenting: sjekk `histMask`, og at `histNewest` øker når et signal endres. Sier loggen `Message from the PLC not understood`, er `tcplink-adapter.js` eldre enn PLS-blokken. Er historikken borte etter et strømbrudd på PLS-en, er ikke `LinkHistory` retentiv |
 | Et betjeningselement er grået ut | *Enabled when*-betingelsen er ikke oppfylt (hold musepekeren over for å se hvilken), eller enheten er frakoblet (etiketten sier *stale*) |
 | En alarm kommer tilbake hvert sekund | Verdien ligger og vipper ved grensen. Gi den hysterese i PLS-en, eller en `delay` i alarmen |
@@ -1526,7 +1570,8 @@ HMI.register('mywidget', {
     return {
       update(tag, value, quality, ts) { out.textContent = value; },
       // event(ev) {}      hendelser og alarmer
-      // restored(series) {}  huben har fått eldre punkter tilbake for taggene (Trend henter på nytt)
+      // restored(series) {}  huben har fått eldre punkter tilbake for taggene (Trend og Timeline henter på nytt)
+      // relabel() {}      tagnavnene er endret
       // destroy() {}      stopp timere
     };
   },
@@ -1539,8 +1584,12 @@ HMI.register('mywidget', {
   tidligere punkter; `ctx.mode()` er `'edit'` eller `'run'`. `ctx.code(list, value)` gir
   `{ label, entry, short }` for en kode, og `ctx.openCode(list, value, { title })` åpner
   pop-up-vinduet for den. `ctx.confirm({ title, message, ok })` stiller et spørsmål (gir true
-  for OK), `ctx.historyRange(tags, from, to, points)` henter punktene til en trend, og
-  `ctx.ack(keys)` kvitterer alarmer.
+  for OK), `ctx.historyRange(tags, from, to, points)` henter punktene til en trend (høyst 8
+  tagger per spørsmål), og `ctx.ack(keys)` kvitterer alarmer. `ctx.registry()` er
+  tagoversikten fra huben (navn → `{ dataType, label, unit, ... }`).
+- **Tagger valgt med et mønster:** `tags(w, known)` får tagoversikten som andre argument. Sett
+  `byPattern: true` på widgettypen, så monterer appen den på nytt når mønsteret treffer andre
+  tagger enn sist, slik Timeline gjør med `kv_1.*`.
 - **Sikrere betjening:** for *Enabled when* og *Ask before sending*: legg til
   `...HMI.commonProps.safety('the question hint')` i `props`, returner begge taggene fra `tags`,
   og bruk `const g = HMI.helpers.guard(root, w, ctx); g.start();` i `mount`. Sjekk så

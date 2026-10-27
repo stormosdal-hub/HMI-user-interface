@@ -348,6 +348,10 @@ body.run .widget.control.stale .wbody { pointer-events: none; }
 body.run .wtrend canvas { cursor: crosshair; }
 .wtrend .legend { display: flex; gap: 12px; font-size: calc(11px * var(--fs-text)); color: var(--ink-2); flex-wrap: wrap; font-variant-numeric: tabular-nums; }
 .wtrend .legend span::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 2px; margin-right: 5px; background: var(--c); vertical-align: 0; }
+/* tidslinjen: dra for å flytte i tid, så nettleseren ikke ruller eller zoomer siden selv */
+body.run .wtimeline canvas { cursor: grab; touch-action: none; }
+body.run .wtimeline canvas.dragging { cursor: grabbing; }
+.tl-info { font-size: calc(11px * var(--fs-text)); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .wevents { align-items: stretch; padding: 0; }
 .evlist { width: 100%; overflow-y: auto; font-size: calc(12px * var(--fs-text)); }
