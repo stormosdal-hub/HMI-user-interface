@@ -1126,6 +1126,19 @@
   };
   // klokkeslett med sekunder, og datoen når det ikke er i dag
   const stamp = t => (new Date(t).toDateString() !== new Date().toDateString() ? dayOf(t) + ' ' : '') + clockOf(t, true);
+  // indeksen til siste punkt på eller før t i en sortert liste [[ts, v], ...]; -1 når alle er senere
+  const pointAt = (pts, t) => { let lo = 0, hi = pts.length - 1, i = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (pts[m][0] <= t) { i = m; lo = m + 1; } else hi = m - 1; } return i; };
+  // historyRange for mange tagger: huben tar 8 per spørsmål, så de spørres i biter samtidig.
+  // Gir { series, error, note } som ett svar
+  async function fetchRange(ctx, names, from, to, points) {
+    const parts = [];
+    for (let i = 0; i < names.length; i += 8) parts.push(names.slice(i, i + 8));
+    let res;
+    try { res = await Promise.all(parts.map(x => ctx.historyRange(x, from, to, points))); }
+    catch (e) { return { series: {}, error: e.message }; }
+    const bad = res.find(x => x.error), said = res.find(x => x.note);
+    return { series: Object.assign({}, ...res.map(x => x.series || {})), error: bad && bad.error, note: said && said.note };
+  }
 
   H.register('timeline', {
     name: 'Timeline', hint: 'Digital signals over time; drag and zoom', size: [520, 260],
@@ -1167,8 +1180,7 @@
       const shown = name => (ctx.tagLabel && ctx.tagLabel(name)) || name;
       const isOnV = v => v !== null && v !== undefined && v !== 0 && v !== false;
       const sameState = (a, b2) => (a === null) === (b2 === null) && isOnV(a) === isOnV(b2);
-      // indeksen til siste punkt på eller før t; -1 når alle er senere
-      const at = (pts, t) => { let lo = 0, hi = pts.length - 1, i = -1; while (lo <= hi) { const m = (lo + hi) >> 1; if (pts[m][0] <= t) { i = m; lo = m + 1; } else hi = m - 1; } return i; };
+      const at = pointAt;
 
       // ---- hva som vises: live, eller en fast strekning [fra, til]
       let view = { live: true, span: clamp(num(p.window, 600) * 1000, SPAN_MIN, SPAN_MAX) };
@@ -1191,21 +1203,15 @@
         const from = r.from - s, to = Math.min(now, r.to + s);
         const points = Math.min(4000, Math.max(300, Math.round((cv.clientWidth || 400) * 3)));
         if (!loaded) note.textContent = 'Loading…';
-        const parts = [];
-        for (let i = 0; i < names.length; i += 8) parts.push(names.slice(i, i + 8));   // huben tar 8 tagger per spørsmål
-        let res;
-        try { res = await Promise.all(parts.map(x => ctx.historyRange(x, from, to, points))); }
-        catch (e) { res = [{ series: {}, error: e.message }]; }
+        const res = await fetchRange(ctx, names, from, to, points);
         if (my !== seq) return;   // et nyere spørsmål er stilt siden
-        const series = Object.assign({}, ...res.map(x => x.series || {}));
         for (const l of lanes) {
-          const got = series[l.name] || [];
+          const got = res.series[l.name] || [];
           l.pts = to === now ? got.concat(l.pts.filter(x => x[0] > to)) : got;   // behold det som kom i mellomtiden
         }
         loaded = { from, to, span: s };
         edge = to === now;
-        const bad = res.find(x => x.error), said = res.find(x => x.note);
-        note.textContent = [bad ? 'History: ' + bad.error : said ? said.note : '', capped].filter(Boolean).join('. ');
+        note.textContent = [res.error ? 'History: ' + res.error : res.note || '', capped].filter(Boolean).join('. ');
         note.className = 'trend-note' + (note.textContent ? ' warn' : '');
         schedule();
       }
@@ -1536,6 +1542,9 @@
       };
     },
   });
+
+  // tid og historikk, delt med Drawing sin tidsstripe (svgwidget.js)
+  H.helpers.time = { RANGES, TICKS, SPAN_MIN, SPAN_MAX, clockOf, dayOf, durText, stamp, clamp, pointAt, fetchRange };
 
   // ---------------------------------------------------------------- hendelser / alarmer
   const SEV = { info: 0, warning: 1, alarm: 2 };

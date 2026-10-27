@@ -19,6 +19,9 @@
  *
  * Flere rader kan peke på samme del: f.eks. en knapp som veksler `power` og
  * farges etter `power` — fargen viser da det enheten meldte tilbake.
+ *
+ * Med Time slider får tegningen en tidsstripe: markøren dras bakover i tid, og tegningen viser
+ * verdiene slik de var der (timeStrip nedenfor). Betjeningen er av så lenge.
  */
 (function () {
   'use strict';
@@ -264,6 +267,7 @@
     const spinners = [];
     const run = ctx.mode() === 'run';
     let raf = 0, last = 0, dead = false;
+    let locked = false;                 // tegningen viser fortiden: betjeningen er av
 
     bindings.forEach(b => {
       const def = ACTIONS[b.action];
@@ -287,15 +291,16 @@
       node.classList.add('hmi-hot');
       if (b.action === 'toggle') {
         node.addEventListener('click', () => {
+          if (locked) return;
           const cur = ctx.value(b.tag);
           ctx.write(b.tag, !truthy(cur ? cur.value : false));
         });
       } else if (b.action === 'set') {
-        node.addEventListener('click', () => ctx.write(b.tag, parseValue(String(b.value ?? 'true'))));
+        node.addEventListener('click', () => { if (!locked) ctx.write(b.tag, parseValue(String(b.value ?? 'true'))); });
       } else if (b.action === 'momentary') {
         node.addEventListener('pointerdown', e => {
           e.preventDefault();
-          if (r.stop) return;
+          if (r.stop || locked) return;
           try { node.setPointerCapture(e.pointerId); } catch { /* ikke alle elementer støtter capture */ }
           r.stop = H.hold(
             () => ctx.write(b.tag, parseValue(String(b.on ?? 'true'))),
@@ -354,10 +359,17 @@
     function refresh(id) {
       const t = targets.get(id);
       if (!t) return;
-      let chosen = null, visible = true, blink = false;
+      let chosen = null, visible = true, blink = false, shows = false, known = false;
       for (const r of t.rs) {
         const b = r.b;
-        if (!values.has(b.tag)) continue;
+        if (ACTIONS[b.action].dir === 'show') { shows = true; if (values.has(b.tag)) known = true; }
+        if (!values.has(b.tag)) {
+          // ingen verdi: står stille, og i fortiden viser delen at verdien ikke er kjent
+          if (b.action === 'spin') r.active = false;
+          if (locked && b.action === 'text') setText(r, '—');
+          if (locked && (b.action === 'rotate' || b.action === 'move') && r.wrap) r.wrap.removeAttribute('transform');
+          continue;
+        }
         const v = values.get(b.tag);
         switch (b.action) {
           case 'color': {
@@ -381,6 +393,7 @@
       if (t.rs.some(r => r.b.action === 'color')) paint(t.el, chosen);
       t.el.style.visibility = visible ? '' : 'hidden';
       t.el.classList.toggle('hmi-blink', blink);
+      t.el.classList.toggle('hmi-unknown', locked && shows && !known);   // fortiden: ingen verdi å vise
       if (spinners.some(r => r.active) && !raf) raf = requestAnimationFrame(tick);
     }
 
@@ -407,6 +420,17 @@
         const ids = byTag.get(tag);
         if (ids) for (const id of ids) refresh(id);
       },
+      // alle verdiene på en gang: de levende, eller (past) verdiene ved et tidspunkt i fortiden.
+      // I fortiden er betjeningen av, og et trykk som holdes, slippes.
+      show(map, past) {
+        locked = !!past;
+        svg.classList.toggle('hmi-past', locked);
+        if (locked) for (const t of targets.values()) for (const r of t.rs) if (r.stop) r.stop();
+        values.clear();
+        for (const [k, v] of map) values.set(k, v);
+        for (const id of targets.keys()) refresh(id);
+      },
+      hasControls: bindings.some(b => ACTIONS[b.action] && ACTIONS[b.action].dir === 'control'),
       destroy() {
         dead = true;
         if (raf) cancelAnimationFrame(raf);
@@ -417,6 +441,303 @@
 
   H.svg = { ACTIONS, defaultsFor, matchWhen, load, forget, build, find, parts, idOf, isGenerated, bboxIn, clientRect, runtime };
 
+  // ---------------------------------------------------------------- tidsstripen
+  // En stripe under tegningen med en markør som dras bakover i tid: tegningen viser da verdiene
+  // slik de var der, fra hubens historikk (og en database, hvis en er koblet til). Strekene i
+  // stripen er endringer i taggene tegningen bruker; pilene hopper mellom dem.
+  // onChange(values, t): verdiene ved tidspunktet t, eller (null, null) for live.
+  const firstAfter = (list, t) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m] <= t) lo = m + 1; else hi = m; } return lo; };
+  const firstFrom = (list, t) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m] < t) lo = m + 1; else hi = m; } return lo; };
+  function timeStrip(body, tags, ctx, p, onChange) {
+    const { RANGES, TICKS, SPAN_MIN, SPAN_MAX, clockOf, dayOf, durText, stamp, clamp, pointAt, fetchRange } = H.helpers.time;
+    const run = () => ctx.mode() === 'run';
+    const box = el('div', 'svg-time');
+    const cv = el('canvas');
+    cv.tabIndex = 0;
+    cv.title = 'Drag the marker back in time. Arrow keys: previous and next change. Mouse wheel: zoom';
+    const row = el('div', 'trend-foot');
+    const when = el('span', 'svg-when');
+    const tools = el('div', 'trend-tools');
+    row.append(when, tools);
+    box.append(cv, row);
+    body.append(box);
+
+    const series = new Map(tags.map(t => [t, []]));
+    let changes = [];     // tidspunktene der en av taggene endret seg, sortert
+    let win = { live: true, span: clamp(num(p.window, 600) * 1000, SPAN_MIN, SPAN_MAX) };
+    let cursor = null;    // null: live; ellers tidspunktet tegningen viser
+    let past = false;     // tegningen viser fortiden nå
+    let note = '';        // feil fra huben
+    let flash = '', flashTimer = 0;   // en kort beskjed, f.eks. at det ikke finnes noen tidligere endring
+    const range = () => (win.live ? { from: Date.now() - win.span, to: Date.now() } : { from: win.from, to: win.to });
+    const span = () => (win.live ? win.span : win.to - win.from);
+
+    // ---- punktene: det stripen viser, og like mye på hver side (men ikke etter nå)
+    let seq = 0, loadTimer = 0, reload = 0, loaded = null, edge = true;
+    const covered = () => { if (!loaded) return false; const r = range(); return r.from >= loaded.from && (r.to <= loaded.to || edge); };
+    async function load() {
+      clearTimeout(loadTimer);
+      const my = ++seq, r = range(), s = r.to - r.from, now = Date.now();
+      const from = r.from - s, to = Math.min(now, r.to + s);
+      const res = await fetchRange(ctx, tags, from, to, 4000);
+      if (my !== seq) return;   // et nyere spørsmål er stilt siden
+      for (const [tag, pts] of series) {
+        const got = res.series[tag] || [];
+        series.set(tag, to === now ? got.concat(pts.filter(x => x[0] > to)) : got);   // behold det som kom i mellomtiden
+      }
+      loaded = { from, to };
+      edge = to === now;
+      note = res.error ? 'History: ' + res.error : '';
+      changes = changesIn(res.series, from);
+      for (const pts of series.values()) for (const x of pts) if (x[0] > to) changes.push(x[0]);
+      changes.sort((a, b) => a - b);
+      apply();
+    }
+    const loadSoon = () => { clearTimeout(loadTimer); loadTimer = setTimeout(load, 200); };
+    // endringene i et svar; det første punktet er verdien som holdt seg fra før `from`
+    function changesIn(set, from) {
+      const out = [];
+      for (const tag of tags) {
+        const pts = set[tag] || [];
+        for (let i = 0; i < pts.length; i++) if (i > 0 || pts[0][0] > from) out.push(pts[i][0]);
+      }
+      return out.sort((a, b) => a - b);
+    }
+    // taggenes verdier ved t. Av/på-tagger lagres som 1 og 0 i historikken, og blir true og false igjen
+    function valuesAt(t) {
+      const out = new Map(), known = ctx.registry ? ctx.registry() : null;
+      for (const [tag, pts] of series) {
+        const i = pointAt(pts, t);
+        if (i < 0 || pts[i][1] === null) continue;
+        const info = known && known.get(tag);
+        out.set(tag, info && info.dataType === 'boolean' ? pts[i][1] !== 0 : pts[i][1]);
+      }
+      return out;
+    }
+    function apply() {
+      if (cursor !== null) { past = true; onChange(valuesAt(cursor), cursor); }
+      else if (past) { past = false; onChange(null, null); }
+      syncRow();
+      schedule();
+    }
+
+    // ---- markøren og tidsrommet
+    function setCursor(t) {
+      const now = Date.now();
+      flash = '';
+      if (t === null || t >= now - 250) {
+        cursor = null;
+        win = { live: true, span: span() };
+      } else {
+        cursor = t;
+        const r = range(), s = r.to - r.from;
+        if (win.live) win = { live: false, from: r.from, to: r.to };   // stripen står stille mens du ser på fortiden
+        if (t < r.from || t > r.to) { const from = Math.min(t - s / 2, now - s); win = { live: false, from, to: from + s }; }
+      }
+      if (!covered()) loadSoon();
+      apply();
+    }
+    function setWindow(from, to) {
+      const s = clamp(to - from, SPAN_MIN, SPAN_MAX), now = Date.now();
+      if (from + s >= now) win = cursor === null ? { live: true, span: s } : { live: false, from: now - s, to: now };
+      else win = { live: false, from, to: from + s };
+      if (!covered()) loadSoon();
+      syncRow();
+      schedule();
+    }
+    // factor > 1 zoomer ut, rundt markøren (live: med nå i høyre kant)
+    function zoom(anchor, factor) {
+      const r = range(), s = r.to - r.from, ns = clamp(s * factor, SPAN_MIN, SPAN_MAX);
+      if (ns === s) return;
+      if (win.live) { win = { live: true, span: ns }; if (!covered()) loadSoon(); syncRow(); schedule(); return; }
+      const from = anchor - (anchor - r.from) * ns / s;
+      setWindow(from, from + ns);
+    }
+    // forrige eller neste endring. Finnes den ikke i det som er hentet, spørres huben om alt
+    // fram til nå (eller 31 dager tilbake): minnet er lite, og en database tynner det ut
+    let stepping = 0;
+    async function step(dir) {
+      const from = cursor === null ? Date.now() : cursor;
+      if (dir > 0 && cursor === null) return;
+      let i = dir < 0 ? firstFrom(changes, from) - 1 : firstAfter(changes, from);
+      if (i >= 0 && i < changes.length) return setCursor(changes[i]);
+      if (dir > 0 && edge) return setCursor(null);
+      const my = ++stepping, now = Date.now();
+      const q = dir < 0 ? [from - SPAN_MAX, from] : [from, now];
+      const res = await fetchRange(ctx, tags, q[0], q[1], 4000);
+      if (my !== stepping) return;
+      const found = changesIn(res.series, q[0]).filter(t => (dir < 0 ? t < from : t > from));
+      if (found.length) return setCursor(dir < 0 ? found[found.length - 1] : found[0]);
+      if (dir > 0) return setCursor(null);
+      flash = 'No earlier change';
+      syncRow();
+      clearTimeout(flashTimer);
+      flashTimer = setTimeout(() => { flash = ''; syncRow(); }, 3000);
+    }
+
+    // ---- knappene
+    const btn = (text, title, fn) => { const x = el('button', null, text); x.type = 'button'; x.title = title; x.addEventListener('click', e => { e.stopPropagation(); fn(); }); return x; };
+    const rangeBtns = RANGES.map(([t, sec]) => btn(t, `Show ${t} on the slider`, () => {
+      const s = sec * 1000, now = Date.now();
+      if (cursor === null) win = { live: true, span: s };
+      else { const from = cursor >= now - s ? now - s : cursor - s / 2; win = { live: false, from, to: from + s }; }
+      if (!covered()) loadSoon();
+      syncRow();
+      schedule();
+    }));
+    const prev = btn('|◀', 'Previous change (←)', () => step(-1));
+    const next = btn('▶|', 'Next change (→)', () => step(1));
+    const liveBtn = btn('Live', 'Back to now (End)', () => setCursor(null));
+    tools.append(...rangeBtns, prev, next, liveBtn);
+    function syncRow() {
+      rangeBtns.forEach((x, i) => x.classList.toggle('on', Math.abs(span() - RANGES[i][1] * 1000) < 1));
+      next.disabled = cursor === null;
+      liveBtn.hidden = cursor === null;
+      box.classList.toggle('past', cursor !== null);
+      const t = cursor === null ? 'Live' : `${stamp(cursor)} · ${durText(Date.now() - cursor)} ago`;
+      when.textContent = [t, note, flash].filter(Boolean).join(' · ');
+      when.classList.toggle('warn', !!(note || flash));
+    }
+
+    // ---- pekeren: dra markøren; ved kanten flytter tidsrommet seg
+    let L = { x0: 8, x1: 100 };
+    const local = e => { const b = cv.getBoundingClientRect(), k = b.width / (cv.clientWidth || 1) || 1; return (e.clientX - b.left) / k; };
+    const timeAt = x => { const r = range(); return r.from + clamp((x - L.x0) / (L.x1 - L.x0 || 1), 0, 1) * (r.to - r.from); };
+    let drag = null, edgeTimer = 0;
+    const atNow = () => range().to >= Date.now() - 1000;
+    const scrub = x => { drag.x = x; setCursor(x >= L.x1 && atNow() ? null : timeAt(x)); };
+    cv.addEventListener('pointerdown', e => {
+      if (!run() || (e.pointerType === 'mouse' && e.button !== 0)) return;
+      cv.setPointerCapture(e.pointerId);
+      cv.focus({ preventScroll: true });
+      drag = { x: local(e) };
+      scrub(drag.x);
+      clearInterval(edgeTimer);
+      edgeTimer = setInterval(() => {
+        if (!drag) return;
+        const over = drag.x < L.x0 ? drag.x - L.x0 : drag.x > L.x1 ? drag.x - L.x1 : 0;
+        if (!over || (over > 0 && atNow())) return;
+        const r = range(), d = clamp(over / 40, -1, 1) * (r.to - r.from) * 0.04;
+        setWindow(r.from + d, r.to + d);
+        setCursor(over < 0 ? range().from : atNow() ? null : range().to);
+      }, 50);
+      e.preventDefault();
+    });
+    cv.addEventListener('pointermove', e => { if (drag) scrub(local(e)); });
+    const release = () => { drag = null; clearInterval(edgeTimer); };
+    cv.addEventListener('pointerup', release);
+    cv.addEventListener('pointercancel', release);
+    cv.addEventListener('wheel', e => {
+      if (!run()) return;
+      e.preventDefault();
+      const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1, dx = e.deltaX * k, dy = e.deltaY * k;
+      if (!dx && !dy) return;
+      const r = range();
+      if (e.shiftKey || Math.abs(dx) > Math.abs(dy)) {
+        const d = (Math.abs(dx) > Math.abs(dy) ? dx : dy) / (L.x1 - L.x0 || 1) * (r.to - r.from);
+        return setWindow(r.from + d, r.to + d);
+      }
+      zoom(cursor !== null ? cursor : timeAt(local(e)), Math.exp(dy * (e.ctrlKey ? 0.01 : 0.0015)));
+    }, { passive: false });
+    cv.addEventListener('keydown', e => {
+      if (!run()) return;
+      if (e.key === 'ArrowLeft') step(-1);
+      else if (e.key === 'ArrowRight') step(1);
+      else if (e.key === 'End' || e.key === 'Escape') setCursor(null);
+      else return;
+      e.preventDefault();
+      e.stopPropagation();
+    });
+
+    // ---- tegningen av stripen
+    let raf = 0;
+    const schedule = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; draw(); }); };
+    const timer = setInterval(() => { if (win.live) schedule(); if (cursor !== null) syncRow(); }, 1000);
+    function draw() {
+      const dpr = window.devicePixelRatio || 1;
+      const W = cv.clientWidth, Hh = cv.clientHeight;
+      if (!W || !Hh) return;
+      if (cv.width !== W * dpr || cv.height !== Hh * dpr) { cv.width = W * dpr; cv.height = Hh * dpr; }
+      const g = cv.getContext('2d');
+      g.setTransform(dpr, 0, 0, dpr, 0, 0);
+      g.clearRect(0, 0, W, Hh);
+      const css = getComputedStyle(box);
+      const col = (name, d) => css.getPropertyValue(name).trim() || d;
+      const r = range(), ms = r.to - r.from;
+      const x0 = 8, x1 = W - 8, ty = 4, th = 12;
+      L = { x0, x1 };
+      const X = t => x0 + (t - r.from) / (ms || 1) * (x1 - x0);
+      g.fillStyle = col('--line-soft', '#2b323b');
+      g.fillRect(x0, ty, x1 - x0, th);
+      // endringene: én strek per piksel
+      g.fillStyle = col('--ink-2', '#aab3be');
+      let lastX = -1;
+      for (let i = firstFrom(changes, r.from); i < changes.length && changes[i] <= r.to; i++) {
+        const x = Math.round(X(changes[i]));
+        if (x !== lastX) g.fillRect(x, ty + 2, 1, th - 4);
+        lastX = x;
+      }
+      // tidsaksen
+      g.font = `10px ${css.fontFamily || 'sans-serif'}`;
+      const minGap = g.measureText(ms >= 86400000 * 2 ? '00.00 00:00' : '00:00:00').width + 14;
+      const stepMs = TICKS.find(s => s / ms * (x1 - x0) >= minGap) || TICKS[TICKS.length - 1];
+      const off = new Date(r.from).getTimezoneOffset() * 60000;
+      g.fillStyle = col('--ink-3', '#6f7a87');
+      g.textAlign = 'center';
+      g.textBaseline = 'top';
+      for (let t = Math.ceil((r.from - off) / stepMs) * stepMs + off; t <= r.to; t += stepMs) {
+        const x = Math.round(X(t));
+        g.fillRect(x, ty + th, 1, 3);
+        const midnight = clockOf(t) === '00:00';
+        const text = stepMs >= 86400000 ? dayOf(t) : midnight && ms > 3600000 ? dayOf(t) : clockOf(t, stepMs < 60000);
+        const tw = g.measureText(text).width / 2;
+        if (x - tw >= 0 && x + tw <= W) g.fillText(text, x, ty + th + 4);
+      }
+      // markøren: i fortiden en linje med et håndtak, live en prikk i høyre kant
+      if (cursor === null) {
+        g.fillStyle = col('--live', '#f2b441');
+        g.beginPath(); g.arc(x1, ty + th / 2, 4, 0, Math.PI * 2); g.fill();
+      } else if (cursor >= r.from && cursor <= r.to) {
+        const x = Math.round(X(cursor)) + 0.5;
+        g.strokeStyle = g.fillStyle = col('--past', '#b18cf0');
+        g.lineWidth = 2;
+        g.beginPath(); g.moveTo(x, 0); g.lineTo(x, ty + th + 2); g.stroke();
+        g.beginPath(); g.arc(x, ty + th / 2, 5.5, 0, Math.PI * 2); g.fill();
+      }
+    }
+    const first = setTimeout(load);
+    const ro = new ResizeObserver(() => schedule());
+    ro.observe(cv);
+    syncRow();
+    return {
+      // en ny verdi: med i stripen, så den er der når markøren dras over den
+      update(tag, value, q, ts) {
+        const pts = series.get(tag);
+        if (!pts || !edge) return;
+        const v = q === 'bad' || value == null ? null : typeof value === 'boolean' ? (value ? 1 : 0) : typeof value === 'number' ? value : undefined;
+        if (v === undefined) return;   // tekst: huben har ingen historikk for den
+        const last = pts[pts.length - 1];
+        if (last && last[1] === v) return;
+        const t = ts || Date.now();
+        if (last && t < last[0]) pts.splice(pointAt(pts, t) + 1, 0, [t, v]); else pts.push([t, v]);
+        if (last) changes.splice(firstAfter(changes, t), 0, t);
+        // fjern det som er langt utenfor, men behold verdien som holdes fra før
+        if (win.live) {
+          const cut = Date.now() - 3 * win.span;
+          let i = 0;
+          while (i + 1 < pts.length && pts[i + 1][0] < cut) i++;
+          if (i) pts.splice(0, i);
+          const k = firstFrom(changes, cut);
+          if (k) changes.splice(0, k);
+        }
+        schedule();
+      },
+      // huben har fått eldre punkter tilbake (f.eks. fra PLS-ens ringbuffer): hent på nytt
+      restored() { clearTimeout(reload); reload = setTimeout(load, 300); },
+      destroy() { clearInterval(timer); clearInterval(edgeTimer); clearTimeout(flashTimer); clearTimeout(first); clearTimeout(loadTimer); clearTimeout(reload); cancelAnimationFrame(raf); ro.disconnect(); seq++; stepping++; },
+    };
+  }
+
   // ---------------------------------------------------------------- widgeten
   H.register('svg', {
     name: 'Drawing', hint: 'SVG with mapped parts', size: [480, 420],
@@ -425,6 +746,10 @@
       { key: 'asset', label: 'Drawing', type: 'asset', default: '' },
       { key: 'theme', label: 'Colours', type: 'select', options: ['dark', 'light', 'auto'], default: 'dark', hint: 'For drawings with adaptive colours (draw.io). Auto follows the operating system.' },
       { key: 'background', label: 'Background', type: 'select', options: ['drawing', 'none'], default: 'drawing' },
+      { key: 'timeTravel', label: 'Time slider', type: 'bool', default: false,
+        hint: 'A bar under the drawing. In Run mode, drag its marker back in time and the drawing shows the values as they were then. Controls in the drawing are off meanwhile' },
+      { key: 'window', label: 'Time slider range (seconds)', type: 'number', default: 600, showIf: p => !!p.timeTravel,
+        hint: 'What the bar shows at first. The hub keeps the last 600 changes of each tag' },
       H.commonProps.labelSize(),
       { key: 'bindings', label: 'Mappings', type: 'bindings', default: [] },
     ],
@@ -439,14 +764,25 @@
         return {};
       }
       let rt = null, dead = false;
-      const pending = new Map();
+      const live = new Map();   // de siste verdiene, også mens tegningen viser fortiden
+      let past = null;          // verdiene ved markøren i tidsstripen, eller null for live
+      const tags = this.tags(w);
+      const banner = el('div', 'svg-past');
+      banner.hidden = true;
+      body.append(banner);
+      const strip = w.props.timeTravel && tags.length ? timeStrip(body, tags, ctx, w.props, (values, t) => {
+        past = values;
+        body.classList.toggle('past', !!past);
+        banner.hidden = !past;
+        if (past) banner.textContent = `History ${H.helpers.time.stamp(t)}${rt && rt.hasControls ? ' · controls are off' : ''}`;
+        if (rt) rt.show(past || live, !!past);
+      }) : null;
       load(w.props.asset).then(text => {
         if (dead) return;
         const svg = build(text, w.props);
         holder.append(svg);
         rt = runtime(svg, w.props.bindings || [], ctx);
-        for (const [t, v] of pending) rt.update(t, v);
-        pending.clear();
+        rt.show(past || live, !!past);
         if (rt.missing.length && ctx.mode() === 'edit') {
           const warn = el('div', 'svg-warn', `${rt.missing.length} mapped part${rt.missing.length > 1 ? 's' : ''} not in drawing: ${rt.missing.join(', ')}`);
           body.append(warn);
@@ -455,8 +791,13 @@
         if (!dead) holder.append(el('div', 'svg-note err', e.message));
       });
       return {
-        update(tag, value) { if (rt) rt.update(tag, value); else pending.set(tag, value); },
-        destroy() { dead = true; if (rt) rt.destroy(); },
+        update(tag, value, q, ts) {
+          live.set(tag, value);
+          if (strip) strip.update(tag, value, q, ts);
+          if (rt && !past) rt.update(tag, value);
+        },
+        restored() { if (strip) strip.restored(); },
+        destroy() { dead = true; if (rt) rt.destroy(); if (strip) strip.destroy(); },
       };
     },
   });

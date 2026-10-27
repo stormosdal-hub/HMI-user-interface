@@ -40,6 +40,7 @@
     pendingHistory: new Map(), // tag -> [resolve, ...]
     cardTab: new Map(),        // kort-id -> fanen som vises (mens siden er åpen)
     requests: new Map(),       // forespørsel-id -> resolve (sjekk av formler)
+    unsent: [],                // spørsmål som venter på forbindelsen (historikk, mens siden starter)
     clipboard: null,           // kopierte widgeter (Ctrl+C / høyreklikkmenyen)
     pasteCount: 0,
     announceCalcs: false,
@@ -292,7 +293,7 @@
     // gir { series: { tag: [[ts, value eller null], ...] }, source, note, error }
     historyRange(tags, from, to, points) {
       if (!tags.length) return Promise.resolve({ series: {} });
-      return request({ type: 'historyRange', tags, from, to, points }, 25000);
+      return request({ type: 'historyRange', tags, from, to, points }, 25000, true);
     },
     events: () => state.events.slice(),
     toast,
@@ -1605,6 +1606,7 @@
       setConn('on', 'Connected');
       send({ type: 'hello', role: 'hmi', name: 'hmi-' + Math.random().toString(36).slice(2, 6) });
       send({ type: 'subscribe', tags: ['*'] });
+      for (const m of state.unsent.splice(0)) if (state.requests.has(m.id)) send(m);   // det som ventet
     };
     ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch { return; } onMessage(m); };
     ws.onclose = () => {
@@ -1699,12 +1701,18 @@
 
   // ================================================================ beregninger
   let reqSeq = 0;
-  function request(msg, timeoutMs = 3000) {
+  // wait: uten forbindelse venter spørsmålet på den (innenfor timeoutMs), i stedet for å feile med
+  // en gang. Siden monterer widgetene før forbindelsen er oppe, og starter i Run-modus når
+  // prosjektet har en passkode: en trend spør da om historikken før huben kan svare.
+  function request(msg, timeoutMs = 3000, wait = false) {
     return new Promise((resolve, reject) => {
       const id = ++reqSeq;
       state.requests.set(id, resolve);
-      if (!send({ ...msg, id })) { state.requests.delete(id); return reject(new Error('not connected to the hub')); }
-      setTimeout(() => { if (state.requests.delete(id)) reject(new Error('the hub did not answer')); }, timeoutMs);
+      if (!send({ ...msg, id })) {
+        if (!wait) { state.requests.delete(id); return reject(new Error('not connected to the hub')); }
+        state.unsent.push({ ...msg, id });
+      }
+      setTimeout(() => { if (state.requests.delete(id)) reject(new Error(state.connected ? 'the hub did not answer' : 'not connected to the hub')); }, timeoutMs);
     });
   }
 

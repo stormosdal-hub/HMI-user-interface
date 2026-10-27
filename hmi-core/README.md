@@ -30,7 +30,7 @@ HMI-en tilbake til PLS-en. Alle nettlesere som åpner HMI-en, ser de samme tagge
 6. [Widgeter](#6-widgeter)
 7. [Beregnede verdier](#7-beregnede-verdier)
 8. [Lagring til database](#8-lagring-til-database): hva huben holder i minnet, og hvordan en database kobles til
-9. [Tegninger (SVG)](#9-tegninger-svg) — hva en tegning trenger
+9. [Tegninger (SVG)](#9-tegninger-svg) — hva en tegning trenger, og [å spole tilbake i tid](#spole-tilbake-i-tid)
 10. [Animasjoner (Three.js)](#10-animasjoner-threejs) — hva en kodesnutt trenger
 11. [Forbindelsen til PLS-en](#11-forbindelsen-til-pls-en) — [tcplink-adapter.js med navnene fra PLS-en](#tcplink-navnene-kommer-fra-pls-en), [historikken fra PLS-en](#historikken-fra-pls-en), binary-adapter.js og layouten, og [eksempeladaptere](#andre-enheter-og-programmer) for andre enheter
 12. [Referanse](#12-referanse) — protokoll, HTTP-API, prosjektfil, kommandolinje
@@ -427,7 +427,7 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
 | Timeline | opptil 128 av/på-tagger | — | Ett felt per digitalt signal, med en stolpe der det var på. Dra for å gå bakover i tid, rull eller klyp for å zoome; markøren viser når signalet slo seg på og av. Se [Tidslinje](#tidslinje-for-digitale-signaler) |
 | Event log | hendelser | — | Filtrer på kildeprefiks og laveste alvorlighetsgrad |
 | Alarm list | alarmer | — | De aktive og ukvitterte alarmene, med Ack; filtrer på kilde og alvorlighetsgrad. Se [Alarmer](#alarmer-og-kvittering) |
-| Drawing | mange tagger | mange tagger | En SVG med en koblingstabell — se [9](#9-tegninger-svg) |
+| Drawing | mange tagger | mange tagger | En SVG med en koblingstabell — se [9](#9-tegninger-svg). *Time slider* gir en tidsstripe for å spole tilbake og se tegningen slik den var, se [Spole tilbake i tid](#spole-tilbake-i-tid) |
 | Animation | mange tagger | — | En Three.js-kodesnutt med deklarerte innganger — se [10](#10-animasjoner-threejs) |
 
 **Farger.** De fleste widgeter har en fargeinnstilling; *Default* betyr temafargen. Alarmrødt
@@ -846,6 +846,38 @@ overstyrer en tidligere. Passer ingenting, beholder delen tegningens egen farge.
 **Toveis deler får to rader.** For eksempel får en av/på-knapp *Toggle on click* på
 `${mono}.power` pluss *Colour by state* på samme tag. Fargen viser da hva enheten meldte
 tilbake, ikke hva som ble klikket. Betjeningshandlinger virker bare i Run-modus.
+
+### Spole tilbake i tid
+
+Kryss av for **Time slider** i innstillingene til en Drawing, så får den en tidsstripe under
+tegningen. Dra markøren bakover, og tegningen viser verdiene slik de var der: farger, tekst,
+synlighet, blinking, spinn, rotasjon og flytting.
+
+- **Stripen** viser et tidsrom, *Time slider range* i innstillingene (10 minutter som
+  standard). Strekene i den er endringer i taggene tegningen bruker, så det synes hvor noe
+  skjedde.
+- **I Run-modus:**
+  - **Dra markøren**, eller klikk et sted i stripen. Holdes den ut over venstre kant, flytter
+    tidsrommet seg bakover.
+  - **|◀ ▶|**, eller piltastene når stripen har fokus, hopper til forrige og neste endring.
+    Finnes det ingen i stripen, spør den huben om alt den har, fram til 31 dager tilbake.
+  - **10 min · 1 h · 8 h · 24 h · 7 d** setter hvor mye stripen viser. Musehjulet zoomer rundt
+    markøren, og Shift+hjul flytter tidsrommet.
+  - **Live**, eller End og Escape, går tilbake til nå. Markøren helt til høyre er også live.
+- **Mens tegningen viser fortiden:**
+  - **Lilla ramme og merkelapp:** `History 13:12:04 · controls are off` står øverst, og tiden
+    står under stripen, med hvor lenge siden det var.
+  - **Betjeningen er av.** Et klikk på en knapp i tegningen skriver ingenting, og et trykk som
+    holdes, slippes når du drar markøren tilbake.
+  - **En del uten kjent verdi** på det tidspunktet er dempet, og tekst viser `—`. Det gjelder
+    før det første punktet huben har for taggen.
+- **Hvor verdiene kommer fra:** samme historikk som trendene: de siste 600 endringene av hver
+  tag i huben, det PLS-en har logget (se [Historikken fra PLS-en](#historikken-fra-pls-en)), og
+  en database hvis en er koblet til.
+- **Tekst-tagger** (for eksempel en tilstand som `running`) har ingen historikk i huben, så en
+  del som bruker en slik tag, er dempet i fortiden.
+- **Av/på-tagger** lagres som 1 og 0 i historikken, og blir true og false igjen når tegningen
+  viser dem, så betingelser som `true` og `false` virker som før.
 
 ---
 
@@ -1529,6 +1561,7 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | "three.js is not installed" | Kjør `npm install` i `hmi-core` |
 | En trend viser bare de siste minuttene | Huben har de siste 600 endringene av hver tag i minnet, og ingen database er koblet til. For en måling som endrer seg hele tiden, er det noen minutter. Se [8](#8-lagring-til-database) |
 | En tidslinje er tom fram til et tidspunkt | Huben har ingen verdi for signalet før det: huben startet, eller adapteren koblet til, da. Det PLS-en har logget i ringbufferen, kommer tilbake (se [Historikken fra PLS-en](#historikken-fra-pls-en)); andre signaler starter når adapteren kobler til |
+| En del av tegningen er dempet når jeg spoler tilbake | Huben har ingen verdi for taggen på det tidspunktet: før det første punktet den har, eller en tekst-tag, som ikke har historikk. Se [Spole tilbake i tid](#spole-tilbake-i-tid) |
 | Et signal mangler i tidslinjen | En gruppe som `kv_1.*` tar bare med av/på-tagger: skriv navnet på et tall alene. Over 128 signaler vises de første; gjør listen kortere, eller ta noen ut med `!` |
 | Trendene får ikke tilbake det PLS-en har logget | Adapterloggen sier `PLC history: ...` ved hver tilkobling. Står det `empty`, logger PLS-en ingenting: sjekk `histMask`, og at `histNewest` øker når et signal endres. Sier loggen `Message from the PLC not understood`, er `tcplink-adapter.js` eldre enn PLS-blokken. Er historikken borte etter et strømbrudd på PLS-en, er ikke `LinkHistory` retentiv |
 | Et betjeningselement er grået ut | *Enabled when*-betingelsen er ikke oppfylt (hold musepekeren over for å se hvilken), eller enheten er frakoblet (etiketten sier *stale*) |
@@ -1587,6 +1620,10 @@ HMI.register('mywidget', {
   for OK), `ctx.historyRange(tags, from, to, points)` henter punktene til en trend (høyst 8
   tagger per spørsmål), og `ctx.ack(keys)` kvitterer alarmer. `ctx.registry()` er
   tagoversikten fra huben (navn → `{ dataType, label, unit, ... }`).
+- **Tid og historikk:** `HMI.helpers.time` har det Trend, Timeline og tidsstripen bruker:
+  `fetchRange(ctx, tags, from, to, points)` henter et tidsrom for mange tagger (i biter på 8),
+  `pointAt(pts, t)` finner punktet som gjelder ved `t`, og `stamp`, `durText`, `clockOf`,
+  `dayOf` skriver tider og varigheter.
 - **Tagger valgt med et mønster:** `tags(w, known)` får tagoversikten som andre argument. Sett
   `byPattern: true` på widgettypen, så monterer appen den på nytt når mønsteret treffer andre
   tagger enn sist, slik Timeline gjør med `kv_1.*`.
