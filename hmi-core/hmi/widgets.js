@@ -1087,8 +1087,9 @@
   // ---------------------------------------------------------------- tidslinje
   // Digitale signaler over tid, ett felt per signal med en stolpe der signalet var på: for å se
   // hva som var aktivt når. Dra for å gå bakover og framover i tid (og opp og ned i listen),
-  // rull med musehjulet eller klyp for å zoome. Punktene kommer fra huben som til Trend
-  // (historyRange), med et tidsrom ekstra på hver side, så et kort drag ikke venter på huben.
+  // rull med musehjulet eller klyp for å zoome. Et klikk setter tidsmarkøren, som tidsstripene til
+  // Drawing følger. Punktene kommer fra huben som til Trend (historyRange), med et tidsrom ekstra
+  // på hver side, så et kort drag ikke venter på huben.
   const LANES_MAX = 128;
   const SPAN_MIN = 10e3, SPAN_MAX = 31 * 86400e3;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
@@ -1139,6 +1140,18 @@
     const bad = res.find(x => x.error), said = res.find(x => x.note);
     return { series: Object.assign({}, ...res.map(x => x.series || {})), error: bad && bad.error, note: said && said.note };
   }
+  // Tidsmarkøren som Timeline og tidsstripene til Drawing deler: tidspunktet de viser, eller null
+  // for live. set(t, fra) gir beskjed til alle andre som lytter (ikke `fra` selv). Når ingen lytter
+  // lenger (en annen skjerm, Edit-modus), er den live igjen
+  const cursor = (() => {
+    let at = null;
+    const subs = new Set();
+    return {
+      get: () => at,
+      set(t, from) { at = t; for (const fn of [...subs]) if (fn !== from && subs.has(fn)) fn(t); },
+      on(fn) { subs.add(fn); return () => { subs.delete(fn); if (!subs.size) at = null; }; },
+    };
+  })();
 
   H.register('timeline', {
     name: 'Timeline', hint: 'Digital signals over time; drag and zoom', size: [520, 260],
@@ -1152,6 +1165,8 @@
         hint: 'Shows only the signals that were on somewhere in the time range' },
       { key: 'timeControls', label: 'Time controls in Run mode', type: 'bool', default: true,
         hint: 'Buttons for 10 min to 7 days, back and forward, zoom, and Live' },
+      { key: 'timeLink', label: 'Time marker', type: 'bool', default: true,
+        hint: 'In Run mode, click to put a marker at a time and drag it to move it. Drawings with a time slider on the screen show that time, and their slider moves the marker' },
       P.color('On colour', '#43c483'),
       P.labelSize(), P.textSize('Names and axis size'),
     ],
@@ -1217,35 +1232,65 @@
       }
       const loadSoon = () => { clearTimeout(loadTimer); loadTimer = setTimeout(load, 200); };
 
-      // ---- flytte og zoome
+      // ---- flytte og zoome. Med en tidsmarkør står tidslinjen stille (ikke live), så markøren blir der den er
+      let mark = null;   // tidsmarkøren: tidspunktet den står på, eller null
       function setView(from, to) {
-        const s = clamp(to - from, SPAN_MIN, SPAN_MAX);
-        view = from + s >= Date.now() ? { live: true, span: s } : { live: false, from, to: from + s };
+        const s = clamp(to - from, SPAN_MIN, SPAN_MAX), now = Date.now();
+        if (from + s >= now) view = mark === null ? { live: true, span: s } : { live: false, from: now - s, to: now };
+        else view = { live: false, from, to: from + s };
         syncTools();
         if (!covered()) loadSoon();
         schedule();
       }
       // factor > 1 zoomer ut. Live står nå fast i høyre kant; ellers står tiden ved `anchor` stille
+      // (uten anchor: markøren når den synes, ellers midten)
       function zoom(anchor, factor) {
         const r = range(), s = r.to - r.from, ns = clamp(s * factor, SPAN_MIN, SPAN_MAX);
         if (ns === s) return;
         if (view.live) { view = { live: true, span: ns }; syncTools(); loadSoon(); schedule(); return; }
-        const a = anchor == null ? (r.from + r.to) / 2 : anchor;
+        const a = anchor != null ? anchor : mark !== null && mark >= r.from && mark <= r.to ? mark : (r.from + r.to) / 2;
         const from = a - (a - r.from) * ns / s;
         setView(from, from + ns);
       }
       const pan = f => { const r = range(), d = f * (r.to - r.from); setView(r.from + d, r.to + d); };
 
+      // ---- tidsmarkøren, delt med tidsstripene til Drawing på skjermen (Run-modus)
+      const linked = p.timeLink !== false && run();
+      const follow = t => setMark(t, true);
+      const off = linked ? cursor.on(follow) : null;
+      // t: et tidspunkt, eller null (bort med markøren, og live igjen). quiet: beskjeden kom fra en annen
+      function setMark(t, quiet) {
+        const now = Date.now();
+        const v = t === null || t >= now - 250 ? null : t;
+        if (v === null) { if (mark !== null) view = { live: true, span: span() }; mark = null; }
+        else {
+          mark = v;
+          const r = range(), s = r.to - r.from;
+          if (v < r.from || v > r.to) { const from = Math.min(v - s / 2, now - s); view = { live: false, from, to: from + s }; }
+          else if (view.live) view = { live: false, from: r.from, to: r.to };
+        }
+        if (!quiet) cursor.set(mark, follow);
+        syncTools();
+        if (!covered()) loadSoon();
+        schedule();
+      }
+
       // ---- tidskontrollene (Run-modus)
       const tools = el('div', 'trend-tools');
       const rangeLabel = el('span', 'trend-range');
       const btn = (text, title, fn) => { const x = el('button', null, text); x.type = 'button'; x.title = title; x.addEventListener('click', e => { e.stopPropagation(); fn(); }); return x; };
-      const rangeBtns = RANGES.map(([t, s]) => btn(t, `The last ${t}, live`, () => { view = { live: true, span: s * 1000 }; syncTools(); load(); }));
+      // med en tidsmarkør: tidsrommet rundt den, ellers det siste, live
+      const rangeBtns = RANGES.map(([t, s]) => btn(t, `The last ${t}, live`, () => {
+        const ms = s * 1000, now = Date.now();
+        if (mark === null) { view = { live: true, span: ms }; syncTools(); load(); return; }
+        const from = mark >= now - ms ? now - ms : mark - ms / 2;
+        setView(from, from + ms);
+      }));
       const back = btn('◀', 'Back in time', () => pan(-0.5));
       const fwd = btn('▶', 'Forward in time', () => pan(0.5));
       const zoomOut = btn('−', 'Zoom out', () => zoom(null, 2));
       const zoomIn = btn('+', 'Zoom in', () => zoom(null, 0.5));
-      const liveBtn = btn('Live', 'Back to now', () => { view = { live: true, span: span() }; syncTools(); load(); });
+      const liveBtn = btn('Live', 'Back to now', () => { if (mark !== null) setMark(null); view = { live: true, span: span() }; syncTools(); load(); });
       function syncTools() {
         rangeBtns.forEach((x, i) => x.classList.toggle('on', view.live && view.span === RANGES[i][1] * 1000));
         fwd.disabled = view.live;
@@ -1271,12 +1316,35 @@
       const local = e => { const r = cv.getBoundingClientRect(), k = r.width / (cv.clientWidth || 1) || 1; return { x: (e.clientX - r.left) / k, y: (e.clientY - r.top) / k }; };
       const timeAt = (x, r) => r.from + clamp((x - L.x0) / (L.x1 - L.x0 || 1), 0, 1) * (r.to - r.from);
       const startDrag = pt => { const r = range(); drag = { start: pt, from: r.from, to: r.to, scrollY, moved: false }; };
+      // tidsmarkøren under pekeren (å dra den flytter den, ikke tiden)
+      const onMark = pt => {
+        if (mark === null || pt.x < L.x0 - 8 || pt.x > L.x1 + 8 || pt.y > L.Hh) return false;
+        const r = range();
+        return mark >= r.from && mark <= r.to && Math.abs(pt.x - (L.x0 + (mark - r.from) / (r.to - r.from || 1) * (L.x1 - L.x0))) <= 7;
+      };
+      const atNow = () => range().to >= Date.now() - 1000;
+      const moveMark = x => setMark(x >= L.x1 && atNow() ? null : timeAt(x, range()));
+      let edgeTimer = 0;
       cv.addEventListener('pointerdown', e => {
         if (!run() || (e.pointerType === 'mouse' && e.button !== 0)) return;
         cv.setPointerCapture(e.pointerId);
         ptrs.set(e.pointerId, local(e));
-        if (ptrs.size === 1) startDrag(local(e));
+        if (ptrs.size === 1 && linked && onMark(local(e))) {
+          // markøren dras; holdt utenfor kanten flytter tidsrommet seg
+          drag = { mark: true, x: local(e).x };
+          hover = null;
+          clearInterval(edgeTimer);
+          edgeTimer = setInterval(() => {
+            if (!drag || !drag.mark) return;
+            const over = drag.x < L.x0 ? drag.x - L.x0 : drag.x > L.x1 ? drag.x - L.x1 : 0;
+            if (!over || (over > 0 && atNow())) return;
+            const r = range(), d = clamp(over / 40, -1, 1) * (r.to - r.from) * 0.04;
+            setView(r.from + d, r.to + d);
+            setMark(over < 0 ? range().from : atNow() ? null : range().to);
+          }, 50);
+        } else if (ptrs.size === 1) startDrag(local(e));
         else if (ptrs.size === 2) {
+          clearInterval(edgeTimer);
           const [a, c] = [...ptrs.values()], r = range();
           pinch = { d: Math.hypot(a.x - c.x, a.y - c.y) || 1, at: timeAt((a.x + c.x) / 2, r), f: ((a.x + c.x) / 2 - L.x0) / (L.x1 - L.x0 || 1), span: r.to - r.from };
           drag = null;
@@ -1294,6 +1362,10 @@
           setView(from, from + ns);
           return;
         }
+        if (drag && drag.mark) {
+          if (ptrs.has(e.pointerId)) { drag.x = pt.x; moveMark(pt.x); }
+          return;
+        }
         if (drag) {
           const dx = pt.x - drag.start.x, dy = pt.y - drag.start.y;
           if (!drag.moved && Math.hypot(dx, dy) < 4) return;
@@ -1306,11 +1378,19 @@
           return;
         }
         hover = pt;
+        cv.classList.toggle('on-mark', linked && onMark(pt));
         schedule();
       });
       const release = e => {
         if (!ptrs.delete(e.pointerId)) return;
-        if (drag && !drag.moved && e.type === 'pointerup') { hover = local(e); schedule(); }   // et trykk: markøren der
+        if (drag && drag.mark) { drag = null; clearInterval(edgeTimer); return; }
+        if (drag && !drag.moved && e.type === 'pointerup') {
+          // et trykk: tidsmarkøren dit (i tidsfeltet), og pekeren med tiden og signalet der
+          const pt = local(e);
+          hover = pt;
+          if (linked && pt.x >= L.x0 && pt.x <= L.x1 && pt.y <= L.Hh) moveMark(pt.x);
+          schedule();
+        }
         if (ptrs.size < 2) pinch = null;
         if (!ptrs.size) { drag = null; cv.classList.remove('dragging'); }
         else if (!drag) { startDrag([...ptrs.values()][0]); drag.moved = true; }   // fra klyp til dra
@@ -1420,6 +1500,9 @@
         const hovLane = run() && hover && hover.y >= y0 && hover.y < y1 ? Math.floor((hover.y - y0 + scrollY) / rowH) : -1;
         const end = Math.min(holdEnd(), tEnd);
         const inset = Math.round(rowH * 0.2);
+        // tidsmarkøren: navnene på signalene som var på der, i på-fargen
+        const markIn = mark !== null && mark >= tStart && mark <= tEnd;
+        const onAtMark = l => { const k = at(l.pts, mark); return k >= 0 && isOnV(l.pts[k][1]); };
         g.save();
         g.beginPath(); g.rect(0, y0, W, y1 - y0); g.clip();
         g.textAlign = 'left';
@@ -1428,7 +1511,7 @@
           const y = y0 + i * rowH - scrollY;
           if (y + rowH < y0 || y > y1) return;
           if (i === hovLane || i % 2) { g.fillStyle = i === hovLane ? 'rgba(255,255,255,0.07)' : 'rgba(255,255,255,0.025)'; g.fillRect(0, y, x1, rowH); }
-          g.fillStyle = ink2;
+          g.fillStyle = markIn && onAtMark(l) ? onCol : ink2;
           g.fillText(fitText(g, shown(l.name), nameW - 12), 6, y + rowH / 2);
           const pts = l.pts;
           for (let k = Math.max(0, at(pts, tStart)); k < pts.length; k++) {
@@ -1467,8 +1550,21 @@
             : String(p.tags || '').trim() ? `No digital tags match “${String(p.tags).trim()}” yet` : 'Choose the signals in the settings';
           g.fillText(fitText(g, why, W - 16), W / 2, (y0 + y1) / 2);
         }
+        // tidsmarkøren: en linje med et håndtak øverst, og tiden nederst
+        if (markIn) {
+          const pc = col('--past', '#b18cf0'), x = Math.round(X(mark));
+          g.fillStyle = pc;
+          g.fillRect(x - 1, y0, 2, y1 - y0);
+          g.beginPath(); g.moveTo(x - 6, y0); g.lineTo(x + 6, y0); g.lineTo(x, y0 + 7); g.fill();
+          const s = stamp(mark), sw = g.measureText(s).width + 10, sx = clamp(x - sw / 2, x0, W - sw);
+          g.fillRect(sx, y1 + 1, sw, padB - 1);
+          g.fillStyle = '#17131f';
+          g.textAlign = 'left';
+          g.textBaseline = 'top';
+          g.fillText(s, sx + 5, y1 + 4);
+        }
 
-        // markøren: tiden nederst, og hvor lenge signalet under pekeren var på eller av
+        // pekeren: tiden nederst, og hvor lenge signalet under den var på eller av
         if (!run() || !hover) return;
         const l = hovLane >= 0 ? shownLanes[hovLane] : null;
         const lh = fontPx + 5;
@@ -1510,6 +1606,8 @@
         tip(rows, [ink, on ? onCol : ink2, ink2], hover.x, hover.y);
       }
 
+      // en tidsmarkør fra før (f.eks. en annen fane på et kort): tidslinjen åpner der
+      if (linked && cursor.get() !== null) setMark(cursor.get(), true);
       // første lasting når widgeten er på siden: lerretets bredde avgjør hvor mange punkter vi ber om
       const first = setTimeout(load);
       const ro = new ResizeObserver(() => schedule());
@@ -1538,13 +1636,13 @@
         relabel() { fitCache.clear(); schedule(); },
         // huben har fått eldre punkter tilbake (f.eks. fra PLS-ens ringbuffer): hent tidsrommet på nytt
         restored() { clearTimeout(reload); reload = setTimeout(load, 300); },
-        destroy() { clearInterval(timer); clearTimeout(first); clearTimeout(loadTimer); clearTimeout(reload); cancelAnimationFrame(raf); ro.disconnect(); seq++; },
+        destroy() { clearInterval(timer); clearInterval(edgeTimer); clearTimeout(first); clearTimeout(loadTimer); clearTimeout(reload); cancelAnimationFrame(raf); ro.disconnect(); seq++; if (off) off(); },
       };
     },
   });
 
   // tid og historikk, delt med Drawing sin tidsstripe (svgwidget.js)
-  H.helpers.time = { RANGES, TICKS, SPAN_MIN, SPAN_MAX, clockOf, dayOf, durText, stamp, clamp, pointAt, fetchRange };
+  H.helpers.time = { RANGES, TICKS, SPAN_MIN, SPAN_MAX, clockOf, dayOf, durText, stamp, clamp, pointAt, fetchRange, cursor };
 
   // ---------------------------------------------------------------- hendelser / alarmer
   const SEV = { info: 0, warning: 1, alarm: 2 };

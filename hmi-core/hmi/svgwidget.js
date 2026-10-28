@@ -444,7 +444,8 @@
   // ---------------------------------------------------------------- tidsstripen
   // En stripe under tegningen med en markør som dras bakover i tid: tegningen viser da verdiene
   // slik de var der, fra hubens historikk (og en database, hvis en er koblet til). Strekene i
-  // stripen er endringer i taggene tegningen bruker; pilene hopper mellom dem.
+  // stripen er endringer i taggene tegningen bruker; pilene hopper mellom dem. Markøren følger
+  // tidsmarkøren i Timeline og de andre tidsstripene på skjermen (HMI.helpers.time.cursor).
   // onChange(values, t): verdiene ved tidspunktet t, eller (null, null) for live.
   const firstAfter = (list, t) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m] <= t) lo = m + 1; else hi = m; } return lo; };
   const firstFrom = (list, t) => { let lo = 0, hi = list.length; while (lo < hi) { const m = (lo + hi) >> 1; if (list[m] < t) lo = m + 1; else hi = m; } return lo; };
@@ -471,6 +472,10 @@
     let flash = '', flashTimer = 0;   // en kort beskjed, f.eks. at det ikke finnes noen tidligere endring
     const range = () => (win.live ? { from: Date.now() - win.span, to: Date.now() } : { from: win.from, to: win.to });
     const span = () => (win.live ? win.span : win.to - win.from);
+    // den delte tidsmarkøren (Run-modus): en annen flytter denne, og denne flytter de andre
+    const linked = p.timeLink !== false && run();
+    const follow = t => setCursor(t, true);
+    const off = linked ? H.helpers.time.cursor.on(follow) : null;
 
     // ---- punktene: det stripen viser, og like mye på hver side (men ikke etter nå)
     let seq = 0, loadTimer = 0, reload = 0, loaded = null, edge = true;
@@ -521,8 +526,8 @@
       schedule();
     }
 
-    // ---- markøren og tidsrommet
-    function setCursor(t) {
+    // ---- markøren og tidsrommet. quiet: beskjeden kom fra den delte tidsmarkøren
+    function setCursor(t, quiet) {
       const now = Date.now();
       flash = '';
       if (t === null || t >= now - 250) {
@@ -536,6 +541,7 @@
       }
       if (!covered()) loadSoon();
       apply();
+      if (!quiet && off) H.helpers.time.cursor.set(cursor, follow);
     }
     function setWindow(from, to) {
       const s = clamp(to - from, SPAN_MIN, SPAN_MAX), now = Date.now();
@@ -705,6 +711,8 @@
         g.beginPath(); g.arc(x, ty + th / 2, 5.5, 0, Math.PI * 2); g.fill();
       }
     }
+    // en tidsmarkør fra før (f.eks. en annen fane på et kort): tegningen åpner der
+    if (linked && H.helpers.time.cursor.get() !== null) setCursor(H.helpers.time.cursor.get(), true);
     const first = setTimeout(load);
     const ro = new ResizeObserver(() => schedule());
     ro.observe(cv);
@@ -734,7 +742,7 @@
       },
       // huben har fått eldre punkter tilbake (f.eks. fra PLS-ens ringbuffer): hent på nytt
       restored() { clearTimeout(reload); reload = setTimeout(load, 300); },
-      destroy() { clearInterval(timer); clearInterval(edgeTimer); clearTimeout(flashTimer); clearTimeout(first); clearTimeout(loadTimer); clearTimeout(reload); cancelAnimationFrame(raf); ro.disconnect(); seq++; stepping++; },
+      destroy() { clearInterval(timer); clearInterval(edgeTimer); clearTimeout(flashTimer); clearTimeout(first); clearTimeout(loadTimer); clearTimeout(reload); cancelAnimationFrame(raf); ro.disconnect(); seq++; stepping++; if (off) off(); },
     };
   }
 
@@ -750,6 +758,8 @@
         hint: 'A bar under the drawing. In Run mode, drag its marker back in time and the drawing shows the values as they were then. Controls in the drawing are off meanwhile' },
       { key: 'window', label: 'Time slider range (seconds)', type: 'number', default: 600, showIf: p => !!p.timeTravel,
         hint: 'What the bar shows at first. The hub keeps the last 600 changes of each tag' },
+      { key: 'timeLink', label: 'Follow the time marker', type: 'bool', default: true, showIf: p => !!p.timeTravel,
+        hint: 'The slider moves together with the time marker in timelines and the time sliders of other drawings on the screen' },
       H.commonProps.labelSize(),
       { key: 'bindings', label: 'Mappings', type: 'bindings', default: [] },
     ],
@@ -766,15 +776,18 @@
       let rt = null, dead = false;
       const live = new Map();   // de siste verdiene, også mens tegningen viser fortiden
       let past = null;          // verdiene ved markøren i tidsstripen, eller null for live
+      let pastT = null;         // tidspunktet de er fra
       const tags = this.tags(w);
       const banner = el('div', 'svg-past');
       banner.hidden = true;
       body.append(banner);
+      const sayPast = () => { if (past) banner.textContent = `History ${H.helpers.time.stamp(pastT)}${rt && rt.hasControls ? ' · controls are off' : ''}`; };
       const strip = w.props.timeTravel && tags.length ? timeStrip(body, tags, ctx, w.props, (values, t) => {
         past = values;
+        pastT = t;
         body.classList.toggle('past', !!past);
         banner.hidden = !past;
-        if (past) banner.textContent = `History ${H.helpers.time.stamp(t)}${rt && rt.hasControls ? ' · controls are off' : ''}`;
+        sayPast();
         if (rt) rt.show(past || live, !!past);
       }) : null;
       load(w.props.asset).then(text => {
@@ -783,6 +796,7 @@
         holder.append(svg);
         rt = runtime(svg, w.props.bindings || [], ctx);
         rt.show(past || live, !!past);
+        sayPast();
         if (rt.missing.length && ctx.mode() === 'edit') {
           const warn = el('div', 'svg-warn', `${rt.missing.length} mapped part${rt.missing.length > 1 ? 's' : ''} not in drawing: ${rt.missing.join(', ')}`);
           body.append(warn);

@@ -352,6 +352,7 @@ body.run .wtrend canvas { cursor: crosshair; }
 /* tidslinjen: dra for å flytte i tid, så nettleseren ikke ruller eller zoomer siden selv */
 body.run .wtimeline canvas { cursor: grab; touch-action: none; }
 body.run .wtimeline canvas.dragging { cursor: grabbing; }
+body.run .wtimeline canvas.on-mark { cursor: ew-resize; }
 .tl-info { font-size: calc(11px * var(--fs-text)); color: var(--ink-3); white-space: nowrap; font-variant-numeric: tabular-nums; }
 
 .wevents { align-items: stretch; padding: 0; }

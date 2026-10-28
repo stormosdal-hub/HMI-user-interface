@@ -424,7 +424,7 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
 | Slider | 1 tag | tall | Skriver når du slipper. [Sikrere betjening](#sikrere-betjening) |
 | Number input | 1 tag | tall | Skriv inn en verdi, trykk Set. [Sikrere betjening](#sikrere-betjening) |
 | Trend | opptil 3 tagger | — | Et tidsrom fra minutter til uker; tidsknapper og en markør i Run-modus; fast eller automatisk skala, én farge per linje. Se [Trender](#trender-over-timer-og-dager) |
-| Timeline | opptil 128 av/på-tagger | — | Ett felt per digitalt signal, med en stolpe der det var på. Dra for å gå bakover i tid, rull eller klyp for å zoome; markøren viser når signalet slo seg på og av. Se [Tidslinje](#tidslinje-for-digitale-signaler) |
+| Timeline | opptil 128 av/på-tagger | — | Ett felt per digitalt signal, med en stolpe der det var på. Dra for å gå bakover i tid, rull eller klyp for å zoome; markøren viser når signalet slo seg på og av. Et klikk setter en tidsmarkør som tegninger med *Time slider* følger. Se [Tidslinje](#tidslinje-for-digitale-signaler) |
 | Event log | hendelser | — | Filtrer på kildeprefiks og laveste alvorlighetsgrad |
 | Alarm list | alarmer | — | De aktive og ukvitterte alarmene, med Ack; filtrer på kilde og alvorlighetsgrad. Se [Alarmer](#alarmer-og-kvittering) |
 | Drawing | mange tagger | mange tagger | En SVG med en koblingstabell — se [9](#9-tegninger-svg). *Time slider* gir en tidsstripe for å spole tilbake og se tegningen slik den var, se [Spole tilbake i tid](#spole-tilbake-i-tid) |
@@ -614,6 +614,12 @@ hva som skjedde rett før en stans.
     når signalet slo seg på og av, og hvor lenge det varte: `On 13:13:37 – now, 5 min 6 s`.
   - **Live** følger nå, med den høyre kanten fast. Et drag bakover gir et fast tidsrom, og et
     drag forbi nå går tilbake til live.
+  - **Tidsmarkøren:** klikk et sted i tidslinjen, så står en lilla markør der, med tiden
+    nederst. Navnene på signalene som var på da, får på-fargen. Dra markøren for å flytte den;
+    holdt utenfor kanten flytter tidsrommet seg. Tidslinjen står stille så lenge markøren er
+    der, og **Live** tar den bort. Tegninger med *Time slider* på skjermen viser samme
+    tidspunkt, se [Spole tilbake i tid](#spole-tilbake-i-tid). *Time marker* i innstillingene
+    slår den av.
 - **Hide signals that stay off:** viser bare signalene som var på et sted i tidsrommet, så en
   lang liste blir kort.
 - **Hvordan den tegnes:**
@@ -864,6 +870,11 @@ synlighet, blinking, spinn, rotasjon og flytting.
   - **10 min · 1 h · 8 h · 24 h · 7 d** setter hvor mye stripen viser. Musehjulet zoomer rundt
     markøren, og Shift+hjul flytter tidsrommet.
   - **Live**, eller End og Escape, går tilbake til nå. Markøren helt til høyre er også live.
+- **Sammen med Timeline:** markøren følger tidsmarkøren i en Timeline på samme skjerm, og
+  tidsstripene til de andre tegningene der. Dra i én av dem, så flytter de andre seg, og
+  **Live** i én gjør alle live. Pilene hopper fortsatt mellom endringene i tegningens egne
+  tagger. Slå av *Follow the time marker* for en tegning som skal spole for seg selv. Bytter
+  du skjerm eller går til Edit, er alt live igjen.
 - **Mens tegningen viser fortiden:**
   - **Lilla ramme og merkelapp:** `History 13:12:04 · controls are off` står øverst, og tiden
     står under stripen, med hvor lenge siden det var.
@@ -1562,6 +1573,7 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | En trend viser bare de siste minuttene | Huben har de siste 600 endringene av hver tag i minnet, og ingen database er koblet til. For en måling som endrer seg hele tiden, er det noen minutter. Se [8](#8-lagring-til-database) |
 | En tidslinje er tom fram til et tidspunkt | Huben har ingen verdi for signalet før det: huben startet, eller adapteren koblet til, da. Det PLS-en har logget i ringbufferen, kommer tilbake (se [Historikken fra PLS-en](#historikken-fra-pls-en)); andre signaler starter når adapteren kobler til |
 | En del av tegningen er dempet når jeg spoler tilbake | Huben har ingen verdi for taggen på det tidspunktet: før det første punktet den har, eller en tekst-tag, som ikke har historikk. Se [Spole tilbake i tid](#spole-tilbake-i-tid) |
+| Tidslinjen følger ikke lenger med på nå | En tidsmarkør står i den (en lilla linje), satt med et klikk eller fra tidsstripen i en tegning. Trykk **Live**, så går den bort. Se [Tidslinje](#tidslinje-for-digitale-signaler) |
 | Et signal mangler i tidslinjen | En gruppe som `kv_1.*` tar bare med av/på-tagger: skriv navnet på et tall alene. Over 128 signaler vises de første; gjør listen kortere, eller ta noen ut med `!` |
 | Trendene får ikke tilbake det PLS-en har logget | Adapterloggen sier `PLC history: ...` ved hver tilkobling. Står det `empty`, logger PLS-en ingenting: sjekk `histMask`, og at `histNewest` øker når et signal endres. Sier loggen `Message from the PLC not understood`, er `tcplink-adapter.js` eldre enn PLS-blokken. Er historikken borte etter et strømbrudd på PLS-en, er ikke `LinkHistory` retentiv |
 | Et betjeningselement er grået ut | *Enabled when*-betingelsen er ikke oppfylt (hold musepekeren over for å se hvilken), eller enheten er frakoblet (etiketten sier *stale*) |
@@ -1623,7 +1635,10 @@ HMI.register('mywidget', {
 - **Tid og historikk:** `HMI.helpers.time` har det Trend, Timeline og tidsstripen bruker:
   `fetchRange(ctx, tags, from, to, points)` henter et tidsrom for mange tagger (i biter på 8),
   `pointAt(pts, t)` finner punktet som gjelder ved `t`, og `stamp`, `durText`, `clockOf`,
-  `dayOf` skriver tider og varigheter.
+  `dayOf` skriver tider og varigheter. `cursor` er tidsmarkøren de deler på skjermen (null er
+  live): `cursor.on(fn)` kaller `fn(t)` når en annen flytter den og gir tilbake en funksjon som
+  slutter å lytte, `cursor.set(t, fn)` flytter den for alle unntatt `fn`, og `cursor.get()` er
+  der den står.
 - **Tagger valgt med et mønster:** `tags(w, known)` får tagoversikten som andre argument. Sett
   `byPattern: true` på widgettypen, så monterer appen den på nytt når mønsteret treffer andre
   tagger enn sist, slik Timeline gjør med `kv_1.*`.
