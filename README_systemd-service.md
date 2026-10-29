@@ -20,6 +20,7 @@ nedenfor.
 | Arbeidsmappe | `/home/stormpi5/Documents/kjoreverk_telemetry` |
 | Tjeneste 1 | `kjoreverk@hub.service` |
 | Tjeneste 2 | `kjoreverk@tcplink-adapter.service` (forbindelsen til PLS-en med TcpLink; for den eldre KjoreverkLink-blokken, se [KjoreverkLink og binary-adapter](#kjoreverklink-og-binary-adapter)) |
+| Tjeneste 3 | `kjoreverk@recorder.service` (sender til den sentrale serveren, se [Recorderen](#recorderen-til-den-sentrale-serveren)) |
 | Malenhet | `/etc/systemd/system/kjoreverk@.service` |
 | Konfigurasjon per instans | `/etc/kjoreverk/instances/*.env` |
 
@@ -110,6 +111,61 @@ systemctl status kjoreverk@tcplink-adapter.service
 ```
 
 Begge skal vise `Active: active (running)` og `Loaded: ... enabled`.
+
+## Recorderen (til den sentrale serveren)
+
+`recorder.js` sender taggene og hendelsene til den sentrale serveren. Hva den gjør, står i
+avsnittet om recorderen i `hmi-core/README.md`. Den bruker den samme malen.
+
+### 1. Oppsettet
+
+Kjøreverkets navn, serverens adresse og nøkkelen, som du lager på serveren:
+
+```bash
+sudo nano /etc/hmi-recorder.json
+```
+
+```json
+{ "vehicle": "kv07", "server": "http://dbserver:8090", "token": "nøkkelen fra serveren" }
+```
+
+Nøkkelen skal bare kunne leses av brukeren tjenesten kjører som:
+
+```bash
+sudo chown root:stormpi5 /etc/hmi-recorder.json
+sudo chmod 640 /etc/hmi-recorder.json
+```
+
+`hmi-core/config/recorder.example.json` viser alle innstillingene.
+
+### 2. Klokka mot serveren
+
+Recorderen sender ingenting før klokka er synkronisert. Med `systemd-timesyncd`, som følger med
+Raspberry Pi OS:
+
+```bash
+sudo nano /etc/systemd/timesyncd.conf      # under [Time]: NTP=dbserver
+sudo systemctl restart systemd-timesyncd
+timedatectl                                # System clock synchronized: yes
+```
+
+Serveren må da være tidsserver på nettet (se `docs/SERVER-PLAN.md` §3.7). Bruker Pi-en `chrony`
+i stedet, settes serveren som `server dbserver iburst` i `/etc/chrony/chrony.conf`.
+
+### 3. Slå på og start
+
+```bash
+echo 'SCRIPT_ARGS=hmi-core/recorder.js' | sudo tee /etc/kjoreverk/instances/recorder.env
+sudo systemctl enable --now kjoreverk@recorder.service
+journalctl -u kjoreverk@recorder.service -n 50 --no-pager
+```
+
+Loggen skal si `the central server answers` og `Recording rules version …`.
+
+- **Stopper du tjenesten,** sender recorderen det som venter, i høyst 5 sekunder.
+- **Den skriver ingenting til SD-kortet**, bortsett fra loggen til journald (se
+  `docs/PLAN.md` §7 om å legge loggene i RAM).
+- **Den kan startes før eller etter huben:** den kobler seg til når huben er oppe.
 
 ## Bytte fra binary-adapter til tcplink-adapter
 

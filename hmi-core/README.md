@@ -29,7 +29,7 @@ HMI-en tilbake til PLS-en. Alle nettlesere som åpner HMI-en, ser de samme tagge
 5. [Lage skjermbilder](#5-lage-skjermbilder)
 6. [Widgeter](#6-widgeter)
 7. [Beregnede verdier](#7-beregnede-verdier)
-8. [Lagring til database](#8-lagring-til-database): hva huben holder i minnet, og hvordan en database kobles til
+8. [Lagring til database](#8-lagring-til-database): hva huben holder i minnet, og [recorderen](#recorderen-til-den-sentrale-serveren) som sender til den sentrale serveren
 9. [Tegninger (SVG)](#9-tegninger-svg) — hva en tegning trenger, og [å spole tilbake i tid](#spole-tilbake-i-tid)
 10. [Animasjoner (Three.js)](#10-animasjoner-threejs) — hva en kodesnutt trenger
 11. [Forbindelsen til PLS-en](#11-forbindelsen-til-pls-en) — [tcplink-adapter.js med navnene fra PLS-en](#tcplink-navnene-kommer-fra-pls-en), [historikken fra PLS-en](#historikken-fra-pls-en), binary-adapter.js og layouten, og [eksempeladaptere](#andre-enheter-og-programmer) for andre enheter
@@ -152,8 +152,9 @@ gjenbrukbar.
 ```
 hmi-core/
   hub.js           program: huben og HMI-en            node hub.js
+  recorder.js      program: sender til den sentrale serveren   node recorder.js
   adapters/        programmer: tcplink-adapter.js og binary-adapter.js (PLS-en), tcp-bridge.js, og eksempeladapterne
-  lib/             kode programmene bruker; kjøres ikke alene (calc.js)
+  lib/             kode programmene bruker; kjøres ikke alene (calc.js, record-rules.js)
   hmi/             nettsiden til HMI-en, som huben sender til nettleseren
   config/          prosjektet: hmi.json, codes.json, tagnames.json, assets/
   docs/            dokumentasjonen og diagrammene
@@ -167,13 +168,15 @@ Alt du starter med `node`, ligger altså øverst eller i `adapters/`.
 |---|---|
 | `hub.js` | Huben: tagger, WebSocket, historikk, beregninger, lagring av prosjekt og ressurser (assets) |
 | `lib/calc.js` | Formelspråket for beregnede tagger. Brukes av `hub.js` |
+| `recorder.js` | Sender taggene og hendelsene reglene velger, til den sentrale serveren. Se [Recorderen](#recorderen-til-den-sentrale-serveren) |
+| `lib/record-rules.js` | Lagringsreglene recorderen bruker (dødbånd, intervaller, flimring, pauser). Brukes av `recorder.js` |
 | `hmi/` (hele mappen) | HMI-en i nettleseren: editor, kjøremiljø, alle widgeter, stiler |
 | `package.json` | Avhengigheter (`ws`, `three`) — `npm install` lager `node_modules/` ut fra den |
 | `adapters/tcplink-adapter.js` | Forbindelsen til en PLS med TcpLink-blokken: størrelsene og navnene på plassene kommer fra PLS-en, så den trenger ingen layoutfil. Se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en) |
 | `adapters/binary-adapter.js` | Forbindelsen til en PLS med KjoreverkLink-blokken: gjør de faste blokkene fra S7-1200 (OUC over TCP) om til navngitte tagger, og sender kommandoene tilbake. Konfigureres med en layoutfil, redigeres aldri. Se [Pakket binærdata](#pakket-binærdata) |
 | `adapters/tcp-bridge.js` | En generell bro for enheter som sender JSON-linjer over rå TCP. PLS-en bruker den ikke; bruken står øverst i filen |
 | `README.md` | Denne filen |
-| `docs/` | `CALCULATIONS.md` (referansen for beregninger og betingelser), `PLAN.md` (planen for en sentral database), arkitekturdiagrammene, og skriptene som tegner dem (`docs/src/`) |
+| `docs/` | `CALCULATIONS.md` (referansen for beregninger og betingelser), `PLAN.md` (planen for recorderen og den sentrale databasen), `SERVER-PLAN.md` (serveren, som bygges i et eget prosjekt), `PROTOKOLL.md` (grensesnittet mellom dem), arkitekturdiagrammene, og skriptene som tegner dem (`docs/src/`) |
 
 Når det kommer en nyere versjon av kjernen, bytter du ut disse filene og kjører
 `npm install`. Prosjektfilene dine blir ikke rørt, så lenge de ligger utenfor kjernemappen
@@ -755,7 +758,7 @@ nettlesere er lukket. En database som kobles til huben ([8](#8-lagring-til-datab
 
 ## 8. Lagring til database
 
-Det finnes ingen database ennå. Det huben vet, ligger i minnet og forsvinner ved en omstart:
+Det huben vet, ligger i minnet og forsvinner ved en omstart:
 
 - **Tagverdier:** de siste 600 endringene av hver numeriske tag (`HMI_HISTORY` endrer tallet,
   se [12.4](#124-kommandolinje)). For en måling som endrer seg hele tiden, er det bare de siste
@@ -777,7 +780,72 @@ den vanlige WebSocket-protokollen ([12.1](#121-websocket-protokoll)):
   `query`, og det svarer med `queryResult`. Svarer det ikke innen 20 sekunder, viser trenden
   det huben har.
 
-Planen for en sentral database står i [docs/PLAN.md](docs/PLAN.md).
+`recorder.js` er et slikt program: det sender til en sentral server ([Recorderen](#recorderen-til-den-sentrale-serveren)).
+Planen står i [docs/PLAN.md](docs/PLAN.md), serveren i [docs/SERVER-PLAN.md](docs/SERVER-PLAN.md),
+og grensesnittet mellom dem i [docs/PROTOKOLL.md](docs/PROTOKOLL.md).
+
+### Recorderen: til den sentrale serveren
+
+`recorder.js` kjører på Pi-en ved siden av huben, og sender taggene og hendelsene til en
+sentral server, der dataene fra alle kjøreverkene samles. Hvilke tagger, og hvor ofte, står i
+reglene, som du lager på serveren.
+
+- **Ingenting skrives til SD-kortet.** Det som skal sendes, venter i en kø i RAM til serveren
+  har lagret det. Går strømmen mens serveren er utilgjengelig, er køen tapt. Det PLS-en har
+  logget i ringbufferen, kommer tilbake (se [Historikken fra PLS-en](#historikken-fra-pls-en)).
+- **Når serveren er borte**, venter alt i køen, og det sendes når serveren svarer igjen, én
+  gang hvert punkt. Er køen full, kastes de eldste verdiene, og serveren får vite om hullet.
+- **Reglene** hentes fra serveren og holdes i RAM. Til de er hentet etter en oppstart, holdes
+  hver endring som den er, og den går gjennom reglene når de kommer. Reglene er de samme som
+  før: hver endring, dødbånd, bare noen biter i et ord, minste og største tid mellom to
+  verdier, vern mot flimring, fast takt, utelating og pauser
+  ([docs/PROTOKOLL.md](docs/PROTOKOLL.md) §7).
+- **Klokka:** recorderen sender ingenting før maskinens klokke er synkronisert (den spør
+  `timedatectl` eller `chronyc`). Hopper klokka når den blir stilt, flyttes alt som venter,
+  like mye. Blir klokka ikke synkronisert innen 10 minutter etter at serveren har svart,
+  sendes verdiene likevel, merket at klokka ikke var synkronisert.
+- **Etter en omstart** spør recorderen serveren hvor langt den har data, og fyller hullet fra
+  hubens minne.
+- **Trendene i HMI-en** (Trend, Timeline og tidsstripen) får det serveren har, når de ber om
+  et tidsrom huben ikke husker. Er serveren borte, viser de hubens minne og
+  *History: the central server can’t be reached*.
+
+**Oppsettet** er en JSON-fil som recorderen bare leser: `/etc/hmi-recorder.json`, eller
+`--config <fil>`. [config/recorder.example.json](config/recorder.example.json) viser alt:
+
+```json
+{ "vehicle": "kv07", "server": "http://dbserver:8090", "token": "nøkkelen fra serveren", "queueMB": 64 }
+```
+
+| Innstilling | Standard | Hva |
+|---|---|---|
+| `vehicle` | vertsnavnet | Kjøreverkets navn på serveren |
+| `server` | — (må stå) | Serverens adresse |
+| `token` | — | Nøkkelen for dette kjøreverket, laget på serveren |
+| `queueMB` | 64 | Hvor mye køen i RAM kan ta. Et punkt tar omtrent 100–130 byte, så 64 MB er omtrent en halv million punkter |
+| `sendSeconds` | 10 | Hvor ofte en batch sendes. Ligger det mye i køen, sendes den med en gang |
+| `clockCheck` | `true` | `false`: stol på klokka uten å spørre systemet |
+| `hub` | `ws://localhost:8080` | Huben |
+
+Legg filen i `/etc`, ikke i `config/`: nøkkelen hører ikke hjemme i git. Gjør den lesbar bare
+for brukeren tjenesten kjører som (`sudo chmod 640`, og `chown root:<bruker>`).
+
+**Statusen** står i taggene `rec.*`, som du kan vise i HMI-en:
+
+| Tag | Hva |
+|---|---|
+| `rec.server` | `ok`, `connecting`, `unreachable`, `busy` eller `key refused` |
+| `rec.queue` | Verdier og hendelser som venter i RAM |
+| `rec.queue_pct` | Hvor full køen er (%) |
+| `rec.last_ack` | Når serveren sist bekreftet en batch |
+| `rec.dropped` | Verdier kastet siden oppstart fordi køen var full |
+| `rec.clock_synced` | Om klokka er synkronisert. Ingenting sendes før den er det |
+| `rec.rules_version` | Versjonen av reglene fra serveren |
+
+Recorderen skriver også i hendelsesloggen: når serveren er borte og tilbake, når reglene
+endres, når en pause begynner og slutter, når klokka hopper, og når køen er full.
+
+For å starte den som en tjeneste, se `README_systemd-service.md` ved siden av `hmi-core`.
 
 ---
 
@@ -1504,8 +1572,13 @@ node adapters/tcplink-adapter.js [options.json] [ws://hub:8080] [--plc=ip:port] 
 node adapters/binary-adapter.js [layout.json] [ws://hub:8080] [--plc=ip:port] [--map] [--dump] [--commands]
 ```
 
-Uten `ws://...` kobler adapterne til `HUB_URL`, eller `ws://localhost:8080`. Bruken står
-også øverst i hver fil.
+```bash
+node recorder.js [--config /etc/hmi-recorder.json] [ws://hub:8080] [--vehicle kv07] [--server http://dbserver:8090] [--token ...] [--queue-mb 64]
+```
+
+Uten `ws://...` kobler adapterne og recorderen til `HUB_URL`, eller `ws://localhost:8080`.
+Bruken står også øverst i hver fil. Innstillingene til recorderen står i
+[Recorderen](#recorderen-til-den-sentrale-serveren).
 
 ---
 
@@ -1571,6 +1644,10 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | En animasjon forblir tom | Åpne kodeeditoren og les konsollen. Vanlige årsaker: en import fra en URL, eller rendering et annet sted enn i `hmi.stage()` / `hmi.container` |
 | "three.js is not installed" | Kjør `npm install` i `hmi-core` |
 | En trend viser bare de siste minuttene | Huben har de siste 600 endringene av hver tag i minnet, og ingen database er koblet til. For en måling som endrer seg hele tiden, er det noen minutter. Se [8](#8-lagring-til-database) |
+| En trend sier *History: the central server can’t be reached* | Recorderen når ikke serveren, så trenden viser hubens minne. `rec.server` sier det samme; recorderens logg sier hvorfor (`journalctl -u kjoreverk@recorder.service`) |
+| `rec.server` er `key refused` | Serveren kjenner ikke nøkkelen (`token`) i `/etc/hmi-recorder.json`, eller den er trukket tilbake. Lag en ny på serveren, og start recorderen på nytt. Den prøver ellers igjen hvert 5. minutt |
+| `rec.clock_synced` er false, og ingenting sendes | Klokka er ikke synkronisert: `timedatectl` viser *System clock synchronized: no*. Sjekk `chrony` eller `systemd-timesyncd` mot serveren. Etter 10 minutter sendes verdiene likevel, merket. På en maskin uten `timedatectl` og `chronyc` regnes klokka som riktig |
+| `rec.dropped` øker | Køen var full: serveren har vært borte lenge, eller reglene lagrer mye. Serveren får vite om hullet. Øk `queueMB`, eller stram inn reglene |
 | En tidslinje er tom fram til et tidspunkt | Huben har ingen verdi for signalet før det: huben startet, eller adapteren koblet til, da. Det PLS-en har logget i ringbufferen, kommer tilbake (se [Historikken fra PLS-en](#historikken-fra-pls-en)); andre signaler starter når adapteren kobler til |
 | En del av tegningen er dempet når jeg spoler tilbake | Huben har ingen verdi for taggen på det tidspunktet: før det første punktet den har, eller en tekst-tag, som ikke har historikk. Se [Spole tilbake i tid](#spole-tilbake-i-tid) |
 | Tidslinjen følger ikke lenger med på nå | En tidsmarkør står i den (en lilla linje), satt med et klikk eller fra tidsstripen i en tegning. Trykk **Live**, så går den bort. Se [Tidslinje](#tidslinje-for-digitale-signaler) |
