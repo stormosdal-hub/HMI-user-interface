@@ -1,0 +1,28 @@
+{
+  "tags": {
+    "${pls}.words_0": {
+      "name": "",
+      "info": "",
+      "alarm": {
+        "severity": "none"
+      },
+      "updated": 1793453764479
+    },
+    "${pls}.words_2": {
+      "name": "",
+      "info": "",
+      "alarm": {
+        "severity": "alarm"
+      },
+      "updated": 1793453781571
+    },
+    "${pls}.bit18": {
+      "name": "",
+      "info": "",
+      "alarm": {
+        "severity": "alarm"
+      },
+      "updated": 1793454628862
+    }
+  }
+}
