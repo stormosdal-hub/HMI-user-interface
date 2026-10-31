@@ -75,13 +75,13 @@ left_bottom = y - 22
 
 # ---------------------------------------------------------------- huben
 hub_lines = [
-    'Tar imot tagger fra alle adapterne, ved siden av kv_1.* fra PLS-en. Hver adapter eier taggene med sitt prefiks.',
+    'Tar imot tagger fra alle adapterne, ved siden av pls.* fra PLS-en. Hver adapter eier taggene med sitt prefiks.',
     'En skriving fra HMI-en går til adapteren som eier taggen; adapteren svarer med verdien som ble satt (ekkoet).',
     ('Pinger hver adapter hvert 15. s. Forsvinner en, blir taggene foreldet (stale), og alarmen Adapter disconnected kommer.', INK3),
 ]
 hh = s.box(HX, TOP, HW, 'hub.js', hub_lines, sub='ws://pi:8080 og http://pi:8080', accent=CYAN, mono_title=True, min_h=left_bottom - TOP - 150)
 plc_y = TOP + hh + 30
-ph = s.box(HX, plc_y, HW, 'binary-adapter.js', ['S7-1200-PLS-en, som før: tagger kv_1.*'], accent=INK3, mono_title=True, dash='5 4')
+ph = s.box(HX, plc_y, HW, 'binary-adapter.js', ['S7-1200-PLS-en, som før: tagger pls.*'], accent=INK3, mono_title=True, dash='5 4')
 s.arrow(HX + HW / 2, plc_y - 3, HX + HW / 2, TOP + hh + 3, INK3, both=True, dash='5 4', sw=1.4)
 
 # hver adapter: verdier inn til huben (amber) over skrivinger ut (blått)

@@ -67,9 +67,9 @@ def build_adapter(y):
     ad['time'] = (y2, h2)
     y3 = y2 + h2 + 12
     h3 = s.box(AX + 16, y3, iw, 'Taggene', [
-        ('bits:  kv_1.bit03 …', VIOLET, True),
-        ('words: kv_1.words_2 …', VIOLET, True),
-        ('og bitene innstillingsfilen gir navn i et word: kv_1.zsw1_fault …', CYAN),
+        ('bits:  pls.bit03 …', VIOLET, True),
+        ('words: pls.words_2 …', VIOLET, True),
+        ('og bitene innstillingsfilen gir navn i et word: pls.zsw1_fault …', CYAN),
         'Hver post går én gang per hubforbindelse, med løpenummer og PLS-tid som ref.'], accent=VIOLET, fill=PANEL2, title_size=14)
     ad['tags'] = (y3, h3)
     return y3 + h3

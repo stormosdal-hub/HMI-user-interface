@@ -70,10 +70,10 @@ def build_adapter(y):
     ad['names'] = (y, h)
     y2 = y + h + 12
     h2 = s.box(AX + 16, y2, iw, 'Datameldingene', [
-        'Størrelsene fra headeren: én tag per plass, kv_1.bit00, words_0, times_0, ints_0, dints_0, reals_0.',
+        'Størrelsene fra headeren: én tag per plass, pls.bit00, words_0, times_0, ints_0, dints_0, reals_0.',
         'En større UDT gir nye tagger; plasser som er borte, blir foreldet.',
         'times_N_age: sekunder fra tiden til PLS-klokka i samme melding.',
-        'Hopp i sekvensnummeret telles i kv_1.rx_gaps.'], accent=AMBER, fill=PANEL2, title_size=14)
+        'Hopp i sekvensnummeret telles i pls.rx_gaps.'], accent=AMBER, fill=PANEL2, title_size=14)
     ad['data'] = (y2, h2)
     y3 = y2 + h2 + 12
     h3 = s.box(AX + 16, y3, iw, 'tcplink-options/kjoreverk-options.json', [
@@ -91,7 +91,7 @@ def build_adapter(y):
     h5 = s.box(AX + 16, y5, iw, 'Beskyttelsene', [
         'Hold-for-å-kjøre-bits faller 600 ms etter siste trykk.',
         'Kommandobits starter nullstilt etter en ny tilkobling, og når huben forsvinner.',
-        'Ingen melding på 3 s: kv_1.link blir false og taggene foreldet. 10 s: ny tilkobling.'], accent=GREEN, fill=PANEL2, title_size=14)
+        'Ingen melding på 3 s: pls.link blir false og taggene foreldet. 10 s: ny tilkobling.'], accent=GREEN, fill=PANEL2, title_size=14)
     return y5 + h5
 ad_h = framed(AX, AW, 'tcplink-adapter.js', 'ingen layoutfil: størrelsene og navnene kommer fra PLS-en', build_adapter, mono=True)
 
@@ -99,7 +99,7 @@ ad_h = framed(AX, AW, 'tcplink-adapter.js', 'ingen layoutfil: størrelsene og na
 hub = {}
 def build_hub(y):
     iw = HW - 32
-    h = s.box(HX + 16, y, iw, 'kv_1.reals_0', [
+    h = s.box(HX + 16, y, iw, 'pls.reals_0', [
         ('navn: Hastighet', CYAN), ('enhet: rpm', CYAN),
         'Taggen er plassen og endres aldri: skjermbilder, beregninger og historikk bruker den.'],
         accent=AMBER, fill=PANEL2, title_size=14, mono_title=True)
@@ -110,7 +110,7 @@ def build_hub(y):
         'Tømmer du ditt, vises PLS-ens igjen.'], accent=CYAN, fill=PANEL2, title_size=14)
     hub['label'] = (y2, h2)
     y3 = y2 + h2 + 12
-    h3 = s.box(HX + 16, y3, iw, 'Skriving', ['kv_1.cmd_* går til tcplink-adapter.js, som eier de taggene.'], accent=BLUE, fill=PANEL2, title_size=14)
+    h3 = s.box(HX + 16, y3, iw, 'Skriving', ['pls.cmd_* går til tcplink-adapter.js, som eier de taggene.'], accent=BLUE, fill=PANEL2, title_size=14)
     hub['writes'] = (y3, h3)
     return y3 + h3
 hub_h = framed(HX, HW, 'hub.js', 'tagger, navn, historikk', build_hub, mono=True)
@@ -121,7 +121,7 @@ def build_hmi(y):
     h = s.box(MX + 16, y, iw, 'Tagoversikten', ['Navnet fra PLS-en ved hver tag. With a name viser bare de navngitte.'], accent=CYAN, fill=PANEL2, title_size=14)
     hmi['tags'] = (y, h)
     y3 = y + h + 12
-    h3 = s.box(MX + 16, y3, iw, 'Betjening', ['Knapper og brytere skriver til kv_1.cmd_*.'], accent=BLUE, fill=PANEL2, title_size=14)
+    h3 = s.box(MX + 16, y3, iw, 'Betjening', ['Knapper og brytere skriver til pls.cmd_*.'], accent=BLUE, fill=PANEL2, title_size=14)
     hmi['controls'] = (y3, h3)
     return y3 + h3
 hmi_h = framed(MX, MW, 'HMI-en', 'i nettleseren', build_hmi)
@@ -166,12 +166,12 @@ Y = max(TOP + plc_h, TOP + ad_h, TOP + hub_h, TOP + hmi_h) + 70
 s.add(s.text(48, Y, 'Plassen i PLS-en og taggen i huben', 20, INK, 600))
 s.add(s.text(48, Y + 26, 'Indeksen i arrayen er den samme i LinkDB, i LinkNames og i taggen. Navnet i LinkNames blir navnet du ser, ikke taggen.', 14, INK2))
 rows = [
-    ('txDigital.bits[i]', 'kv_1.bit00 ... bit31', 'LinkNames.txBits[i]', AMBER),
-    ('txDigital.words[i]', 'kv_1.words_0 ...', 'LinkNames.txWords[i]', AMBER),
-    ('txDigital.times[i]', 'kv_1.times_0, times_0_age', 'LinkNames.txTimes[i]', AMBER),
-    ('txAnalog.ints / dints / reals[i]', 'kv_1.ints_0, dints_0, reals_0', 'txInts / txDints / txReals[i], med [enhet]', AMBER),
-    ('rx.bits[i] (og pulse[i])', 'kv_1.cmd_bit00 ... cmd_bit15', 'LinkNames.rxBits[i]', BLUE),
-    ('rx.words / ints / dints / reals[i]', 'kv_1.cmd_words_0, cmd_ints_0 ...', 'rxWords / rxInts / rxDints / rxReals[i]', BLUE),
+    ('txDigital.bits[i]', 'pls.bit00 ... bit31', 'LinkNames.txBits[i]', AMBER),
+    ('txDigital.words[i]', 'pls.words_0 ...', 'LinkNames.txWords[i]', AMBER),
+    ('txDigital.times[i]', 'pls.times_0, times_0_age', 'LinkNames.txTimes[i]', AMBER),
+    ('txAnalog.ints / dints / reals[i]', 'pls.ints_0, dints_0, reals_0', 'txInts / txDints / txReals[i], med [enhet]', AMBER),
+    ('rx.bits[i] (og pulse[i])', 'pls.cmd_bit00 ... cmd_bit15', 'LinkNames.rxBits[i]', BLUE),
+    ('rx.words / ints / dints / reals[i]', 'pls.cmd_words_0, cmd_ints_0 ...', 'rxWords / rxInts / rxDints / rxReals[i]', BLUE),
 ]
 cols = [(48, 'I PLS-en'), (470, 'Taggen i huben'), (900, 'Navnet kommer fra')]
 ry = Y + 66
@@ -184,7 +184,7 @@ for i, (a, b, c, col) in enumerate(rows):
     s.add(s.text(60, yy + 20, a, 13, col, 500, mono=True))
     s.add(s.text(482, yy + 20, b, 13, INK, 500, mono=True))
     s.add(s.text(912, yy + 20, c, 13, CYAN, 400, mono=True))
-s.add(s.text(48, ry + len(rows) * 34 + 26, 'I tillegg: kv_1.link (true mens meldinger kommer), kv_1.rx_gaps, kv_1.ts (PLS-klokka) og kv_1.ts_is_local, og bitene som innstillingsfilen gir navn (kv_1.zsw1_enabled ...).', 13, INK2))
+s.add(s.text(48, ry + len(rows) * 34 + 26, 'I tillegg: pls.link (true mens meldinger kommer), pls.rx_gaps, pls.ts (PLS-klokka) og pls.ts_is_local, og bitene som innstillingsfilen gir navn (pls.zsw1_enabled ...).', 13, INK2))
 
 # ---------------------------------------------------------------- rekkefølgen
 T = ry + len(rows) * 34 + 90

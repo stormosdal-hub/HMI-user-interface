@@ -8,8 +8,8 @@
  * tilkobling sender PLS-en navnene på plassene (TcpLinkNames). Adapteren trenger derfor ingen
  * layoutfil:
  *
- *   - én tag per plass, oppkalt etter plassen: kv_1.bit00, kv_1.words_0, kv_1.reals_0, og
- *     kv_1.cmd_bit00, kv_1.cmd_ints_0 ... for kommandoene tilbake
+ *   - én tag per plass, oppkalt etter plassen: pls.bit00, pls.words_0, pls.reals_0, og
+ *     pls.cmd_bit00, pls.cmd_ints_0 ... for kommandoene tilbake
  *   - navnet fra PLS-en blir taggens navn i HMI-en (label), og en [enhet] til slutt i navnet på
  *     en tallplass blir enheten: 'Hastighet [rpm]' gir Hastighet, rpm
  *   - endrer du størrelsen på en UDT, eller et navn, i PLS-en, registrerer adapteren taggene
@@ -35,7 +35,10 @@
  *   node adapters/tcplink-adapter.js                        innstillingene i tcplink-options/kjoreverk-options.json
  *   node adapters/tcplink-adapter.js <options.json>         andre innstillinger
  *   node adapters/tcplink-adapter.js --plc=10.0.123.51:2000 koble til PLS-en der (overstyrer "connect")
- *   node adapters/tcplink-adapter.js --device=kv_2          tagprefikset (overstyrer "device")
+ *   node adapters/tcplink-adapter.js --device=pls2          tagprefikset (overstyrer "device")
+ *   node adapters/tcplink-adapter.js --name=kv_52           navnet i huben, som alarmlisten viser (ellers
+ *                                                           kjøreverkets navn i /etc/kjoreverk/vehicle,
+ *                                                           eller tagprefikset)
  *   node adapters/tcplink-adapter.js ws://10.0.0.5:8080     en hub på en annen maskin (ellers HUB_URL eller ws://localhost:8080)
  *   node adapters/tcplink-adapter.js --no-commands          send bare nuller til PLS-en: HMI-en kan ikke styre noe
  *   node adapters/tcplink-adapter.js --dump                 logg hver melding i hex mens den kjører
@@ -45,6 +48,7 @@
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
+const { vehicleName } = require('../lib/vehicle');
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 // Tidsintervaller bruker en monoton klokke, så å stille datamaskinens klokke kan ikke utløse
@@ -302,6 +306,7 @@ function run(o, hubUrl, dump) {
   const WebSocket = require('ws');
   const D = o.device;
   const T = n => `${D}.${n}`;
+  const NAME = o.name || D;                       // navnet i huben: kilden i alarmlisten og hendelsesloggen
   const timeoutMs = o.timeoutMs || 3000;          // så lenge uten melding før taggene blir foreldet
   const dropMs = Math.max(timeoutMs * 3, 10000);  // så lenge før forbindelsen kobles opp på nytt
   const sendEveryMs = o.sendEveryMs || 500;       // godt under rxTimeout (2 s) i PLS-en
@@ -404,8 +409,8 @@ function run(o, hubUrl, dump) {
     ws = new WebSocket(hubUrl);
     ws.on('open', () => {
       hubOpen = true;
-      log(`hub ${hubUrl} connected as ${D}`);
-      toHub({ type: 'hello', role: 'adapter', name: D });
+      log(`hub ${hubUrl} connected as ${NAME}`);
+      toHub({ type: 'hello', role: 'adapter', name: NAME });
       registered = new Set();
       registerTags();
       toHub({ type: 'update', values: { [T('link')]: link, [T('rx_gaps')]: rxGaps } });
@@ -774,9 +779,11 @@ if (require.main === module) {
   try { o = loadOptions(file); } catch (e) { console.error(`Options ${e.message}`); process.exit(1); }
   if (flagValue('--plc')) o.connect = flagValue('--plc');
   if (flagValue('--device')) o.device = flagValue('--device');
+  o.name = flagValue('--name') || vehicleName() || '';
   if (flags.has('--no-commands')) o.commands = false;
-  if (!o.device || !NAME_RX.test(o.device)) { console.error('Set the tag prefix: "device" in the options file, or --device=kv_1'); process.exit(1); }
+  if (!o.device || !NAME_RX.test(o.device)) { console.error('Set the tag prefix: "device" in the options file, or --device=pls'); process.exit(1); }
+  if (o.name && !NAME_RX.test(o.name)) { console.error(`--name=${o.name}: letters, digits, _ . - only`); process.exit(1); }
   if (!/^[^:\s]+:\d+$/.test(String(o.connect || ''))) { console.error('Set the PLC address: "connect" in the options file, or --plc=10.0.123.51:2000'); process.exit(1); }
-  log(`TcpLink adapter for "${o.device}"${file ? `, options ${path.basename(file)}` : ''}; commands to the PLC ${o.commands !== false ? 'enabled' : 'OFF (only zeros are sent)'}`);
+  log(`TcpLink adapter for "${o.device}"${o.name && o.name !== o.device ? `, named ${o.name} in the hub` : ''}${file ? `, options ${path.basename(file)}` : ''}; commands to the PLC ${o.commands !== false ? 'enabled' : 'OFF (only zeros are sent)'}`);
   run(o, hubUrl, flags.has('--dump'));
 }

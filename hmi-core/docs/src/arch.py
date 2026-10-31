@@ -25,10 +25,10 @@ for x, label in [(PX, 'PLS'), (AX, 'Adapter'), (HX, 'Hub'), (BX, 'Nettlesere')]:
 # ---------------------------------------------------------------- adapteren og innstillingsfilen
 a1 = TOP
 h1 = s.box(AX, a1, AW, 'tcplink-adapter.js', [
-    'Gjør hver plass i TcpLink om til en tag (kv_1.bit00, kv_1.reals_0 …), med navnet og enheten fra PLS-en.',
+    'Gjør hver plass i TcpLink om til en tag (pls.bit00, pls.reals_0 …), med navnet og enheten fra PLS-en.',
     'Sender kommandorammen tilbake ved hver endring og hvert 500 ms.',
     'Legger det PLS-en har logget, tilbake i hubens historikk (restore).',
-    ('Ingen layoutfil: størrelsene står i headeren. kv_1.link sier om forbindelsen er oppe.', INK3)],
+    ('Ingen layoutfil: størrelsene står i headeren. pls.link sier om forbindelsen er oppe.', INK3)],
     accent=AMBER, mono_title=True)
 a1c = a1 + h1 / 2
 a2 = a1 + h1 + 30
@@ -147,7 +147,7 @@ for i, (t, body, col) in enumerate(steps):
     x += cw + gap
 note_y = RY + 18 + max(heights) + 30
 s.add(s.text(48, note_y, 'Kommer det ingenting fra PLS-en på 3 s, eller faller adapteren ut, blir taggene foreldet: siste verdi står i grått, og beregninger som bruker dem, blir også foreldet.', 14, INK2))
-s.add(s.text(48, note_y + 22, 'Alarmen No data from the PLC kommer 2 s etter at kv_1.link er blitt false.', 14, INK2))
+s.add(s.text(48, note_y + 22, 'Alarmen No data from the PLC kommer 2 s etter at pls.link er blitt false.', 14, INK2))
 note_y += 22
 
 s.h = int(note_y + 40)

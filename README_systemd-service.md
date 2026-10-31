@@ -34,7 +34,9 @@ nedenfor.
   forskjellige instansnavn (`%i`).
 - Hvert instansnavn (`hub`, `tcplink-adapter`, ...) hører til en fil
   `/etc/kjoreverk/instances/<navn>.env` med én linje: `SCRIPT_ARGS=...` — nøyaktig det du
-  ellers ville skrevet etter `node`.
+  ellers ville skrevet etter `node`. Først skriptet, så argumentene til det, med mellomrom
+  mellom: `SCRIPT_ARGS=hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000 --dump` er
+  det samme som `node hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000 --dump`.
 - Stiene i `SCRIPT_ARGS` er relative til arbeidsmappen (`WorkingDirectory`), så
   `hmi-core/hub.js` betyr `/home/stormpi5/Documents/kjoreverk_telemetry/hmi-core/hub.js`.
 - Linjen `ExecStart=/usr/bin/node $SCRIPT_ARGS` i malen lar systemd dele strengen opp i
@@ -46,20 +48,26 @@ nedenfor.
 
 Bruk dette når du setter opp et nytt SD-kort eller en ny Pi.
 
-### 1. Lag konfigurasjonsfilene for instansene
+### 1. Kjøreverkets navn og konfigurasjonsfilene for instansene
 
 ```bash
 sudo mkdir -p /etc/kjoreverk/instances
+
+echo kv_52 | sudo tee /etc/kjoreverk/vehicle
 
 echo 'SCRIPT_ARGS=hmi-core/hub.js' | sudo tee /etc/kjoreverk/instances/hub.env
 
 echo 'SCRIPT_ARGS=hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000' | sudo tee /etc/kjoreverk/instances/tcplink-adapter.env
 ```
 
-`tcplink-adapter.js` trenger ingen layoutfil: navnene og størrelsene kommer fra PLS-en. Resten
-(tagprefikset, alarmene og hold-for-å-kjøre) står i
-`hmi-core/adapters/tcplink-options/kjoreverk-options.json`, som den finner av seg selv.
-`--plc=` overstyrer adressen der.
+- **Kjøreverkets navn** (`kv_52`) er det eneste som er forskjellig fra kjøreverk til kjøreverk.
+  Adapteren bruker det som navn i huben, så alarmlisten sier *kv_52 Drive fault …*, og
+  recorderen bruker det som kjøreverkets id på serveren. Taggene heter `pls.*` i alle
+  kjøreverkene. Se *Kjøreverkets navn* i `hmi-core/README.md`.
+- `tcplink-adapter.js` trenger ingen layoutfil: navnene og størrelsene kommer fra PLS-en. Resten
+  (tagprefikset, alarmene og hold-for-å-kjøre) står i
+  `hmi-core/adapters/tcplink-options/kjoreverk-options.json`, som den finner av seg selv.
+  `--plc=` overstyrer adressen der.
 
 ### 2. Lag malenheten
 
@@ -119,14 +127,15 @@ avsnittet om recorderen i `hmi-core/README.md`. Den bruker den samme malen.
 
 ### 1. Oppsettet
 
-Kjøreverkets navn, serverens adresse og nøkkelen, som du lager på serveren:
+Serverens adresse og nøkkelen, som du lager på serveren. Kjøreverkets navn tar recorderen fra
+`/etc/kjoreverk/vehicle` (se [1. Kjøreverkets navn](#1-kjøreverkets-navn-og-konfigurasjonsfilene-for-instansene)):
 
 ```bash
 sudo nano /etc/hmi-recorder.json
 ```
 
 ```json
-{ "vehicle": "kv07", "server": "http://dbserver:8090", "token": "nøkkelen fra serveren" }
+{ "server": "http://dbserver:8090", "token": "nøkkelen fra serveren" }
 ```
 
 Nøkkelen skal bare kunne leses av brukeren tjenesten kjører som:
@@ -138,19 +147,18 @@ sudo chmod 640 /etc/hmi-recorder.json
 
 `hmi-core/config/recorder.example.json` viser alle innstillingene.
 
-### 2. Klokka mot serveren
+### 2. Klokka mot tidsserveren
 
-Recorderen sender ingenting før klokka er synkronisert. Med `systemd-timesyncd`, som følger med
-Raspberry Pi OS:
+Recorderen sender ingenting før klokka er synkronisert. Tidsserveren på nettet er `10.0.0.104`,
+den samme som den sentrale serveren bruker. Med `systemd-timesyncd`, som følger med Raspberry Pi OS:
 
 ```bash
-sudo nano /etc/systemd/timesyncd.conf      # under [Time]: NTP=dbserver
+sudo nano /etc/systemd/timesyncd.conf      # under [Time]: NTP=10.0.0.104
 sudo systemctl restart systemd-timesyncd
 timedatectl                                # System clock synchronized: yes
 ```
 
-Serveren må da være tidsserver på nettet (se `docs/SERVER-PLAN.md` §3.7). Bruker Pi-en `chrony`
-i stedet, settes serveren som `server dbserver iburst` i `/etc/chrony/chrony.conf`.
+Bruker Pi-en `chrony` i stedet, skriv `server 10.0.0.104 iburst` i `/etc/chrony/chrony.conf`.
 
 ### 3. Slå på og start
 

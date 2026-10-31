@@ -923,6 +923,7 @@ body.run .widget.has-codes .wbody:focus-visible { outline: 2px solid var(--edit)
 .al-msg { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .al-msg b { font-weight: 500; color: var(--ink-2); margin-right: 8px; }
 .al-count { margin-left: 8px; font-size: 0.85em; color: var(--ink-3); }
+.al-tag { margin-left: 10px; color: var(--ink-3); font: 0.85em ui-monospace, "SFMono-Regular", Consolas, monospace; }
 .al-state { font-size: 0.85em; color: var(--ink-3); white-space: nowrap; }
 .al-row.active:not(.acked) .al-state { color: var(--ink); font-weight: 500; }
 .al-tools { display: flex; gap: 6px; justify-content: flex-end; }

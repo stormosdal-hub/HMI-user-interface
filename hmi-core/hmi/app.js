@@ -1630,7 +1630,7 @@
           if (labels !== state.labelsKey) { state.labelsKey = labels; for (const w of state.mounted.values()) if (w.handle.relabel) w.handle.relabel(); }
         }
         for (const id of state.mounted.keys()) markCalc(id);
-        // widgeter som velger taggene sine med et mønster (Timeline: kv_1.*): monteres på nytt når
+        // widgeter som velger taggene sine med et mønster (Timeline: pls.*): monteres på nytt når
         // mønsteret treffer andre tagger enn sist
         for (const m of [...state.mounted.values()]) {
           const def = H.widgets[m.widget.type];

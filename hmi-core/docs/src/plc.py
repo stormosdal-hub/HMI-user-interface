@@ -58,14 +58,14 @@ def build_adapter(y):
     iw = AW - 32
     h = s.box(AX + 16, y, iw, 'Mottak av uplinken', [
         'Sjekker magic, versjon og lengde. Hvis strømmen kommer ut av takt, leter den etter neste header.',
-        'Teller hopp i sekvensnummeret i kv_1.rx_gaps.',
-        'Gjør hvert felt om til en tag: kv_1.bit00 til bit63, speedAct, statusWord og ZSW1-bitene, ints, words og dints.',
+        'Teller hopp i sekvensnummeret i pls.rx_gaps.',
+        'Gjør hvert felt om til en tag: pls.bit00 til bit63, speedAct, statusWord og ZSW1-bitene, ints, words og dints.',
         'Viser DTL-tider i lokal tid, og måler lastDriveTime_age mot PLS-ens egen sendetid.',
         'Feil- og advarselskoder blir hendelser.'], accent=AMBER, fill=PANEL2, title_size=14)
     ad['rx'] = (y, h)
     y2 = y + h + 12
     h2 = s.box(AX + 16, y2, iw, 'Overvåking av forbindelsen', [
-        ('Ingen blokk på 3 s: kv_1.link blir false, og alle kv_1-tagger blir foreldet.', INK2)], accent=GREEN, fill=PANEL2, title_size=14)
+        ('Ingen blokk på 3 s: pls.link blir false, og alle pls-tagger blir foreldet.', INK2)], accent=GREEN, fill=PANEL2, title_size=14)
     y3 = y2 + h2 + 12
     h3 = s.box(AX + 16, y3, iw, 'Sending av downlinken', [
         'Holder et kommandobilde og sender det som en blokk på 46 byte ved hver endring og hvert 500 ms.',
@@ -84,7 +84,7 @@ ad_h = framed(AX, AW, 'binary-adapter.js', 'fixed-modus, leser binary-layouts/kj
 hub = {}
 def build_hub(y):
     iw = HW - 32
-    h = s.box(HX + 16, y, iw, 'kv_1.*-tagger', ['Verdi, kvalitet og historikk for hvert felt.'], accent=AMBER, fill=PANEL2, title_size=14)
+    h = s.box(HX + 16, y, iw, 'pls.*-tagger', ['Verdi, kvalitet og historikk for hvert felt.'], accent=AMBER, fill=PANEL2, title_size=14)
     hub['tags'] = (y, h)
     y2 = y + h + 12
     h2 = s.box(HX + 16, y2, iw, 'Beregninger', [
@@ -92,7 +92,7 @@ def build_hub(y):
         ('calc.kv_torque_nm = torqueAct / 16384 \u00d7 p2003', VIOLET),
         ('calc.kv_power_w', VIOLET)], accent=VIOLET, fill=PANEL2, title_size=14)
     y3 = y2 + h2 + 12
-    h3 = s.box(HX + 16, y3, iw, 'Skriving', ['Skriving til kv_1.cmd_* går til binary-adapter.js, som eier de taggene.'], accent=BLUE, fill=PANEL2, title_size=14)
+    h3 = s.box(HX + 16, y3, iw, 'Skriving', ['Skriving til pls.cmd_* går til binary-adapter.js, som eier de taggene.'], accent=BLUE, fill=PANEL2, title_size=14)
     hub['writes'] = (y3, h3)
     return y3 + h3
 hub_h = framed(HX, HW, 'hub.js', 'tagger, historikk, beregninger', build_hub, mono=True)
@@ -103,7 +103,7 @@ def build_hmi(y):
     h = s.box(MX + 16, y, iw, 'PLS-skjermbilde', ['Hastighet, moment, effekt, ZSW1, feilkode, når drivet sist gikk og hvor lenge den har stått stille.'], accent=AMBER, fill=PANEL2, title_size=14)
     hmi['screen'] = (y, h)
     y2 = y + h + 12
-    h2 = s.box(MX + 16, y2, iw, 'Betjening', ['Brytere og knapper skriver til kv_1.cmd_*.', 'Knapper med hold-to-run gjentar trykket hvert 200 ms.'], accent=BLUE, fill=PANEL2, title_size=14)
+    h2 = s.box(MX + 16, y2, iw, 'Betjening', ['Brytere og knapper skriver til pls.cmd_*.', 'Knapper med hold-to-run gjentar trykket hvert 200 ms.'], accent=BLUE, fill=PANEL2, title_size=14)
     hmi['controls'] = (y2, h2)
     y3 = y2 + h2 + 12
     h3 = s.box(MX + 16, y3, iw, 'Foreldede verdier', [('Vises i grått mens PLS-forbindelsen er nede.', INK2)], accent=GREEN, fill=PANEL2, title_size=14)
@@ -230,7 +230,7 @@ s.add(s.text(48, F, 'Når noe går galt', 20, INK, 600))
 cards = [
     ('Nettleseren dør midt i et trykk', 'Gjentakelsene stopper. Adapteren slipper hold-to-run-biten 600 ms etter siste trykk, og venter på at knappen slippes før den godtar den igjen.'),
     ('PC-en eller adapteren stopper', 'Ingen kommandorammer kommer fram, og etter 2 s nullstiller KjoreverkLink alle kommandoer.'),
-    ('PLS-en slutter å sende', 'Etter 3 s blir kv_1.link false. Alle kv_1-tagger, og hver beregning som bruker en av dem, blir foreldet, og en advarselshendelse vises.'),
+    ('PLS-en slutter å sende', 'Etter 3 s blir pls.link false. Alle pls-tagger, og hver beregning som bruker en av dem, blir foreldet, og en advarselshendelse vises.'),
     ('TCP-forbindelsen faller ut', 'PLS-en nullstiller kommandoene. Adapteren prøver å koble til igjen hvert sekund, og kommandobitene starter nullstilt.'),
 ]
 cw, gap = (W - 96 - 3 * 16) / 4, 16

@@ -19,9 +19,13 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer, WebSocket } = require('ws');
 const { compile, resolveVars } = require('./lib/calc');
+const { vehicleName } = require('./lib/vehicle');
 
 const PORT = Number(process.env.HMI_PORT || process.argv[2] || 8080);
 const CONFIG_PATH = path.resolve(process.env.HMI_CONFIG || process.argv[3] || path.join(__dirname, 'config', 'hmi.json'));
+// kjøreverkets navn (/etc/kjoreverk/vehicle): kilden for alarmene og hendelsene fra beregningene,
+// som PLS-adapteren bruker det samme. Uten det er kilden beregningens tag.
+const VEHICLE = vehicleName();
 const HMI_DIR = path.join(__dirname, 'hmi');
 // tegninger og andre prosjektfiler ligger ved siden av konfigurasjonen, så når du kopierer
 // konfigurasjonsmappen, kopierer du hele prosjektet
@@ -273,7 +277,7 @@ function calcEvent(e, value, quality) {
   const truth = !!value;
   // alarmlisten følger hver endring; hendelsesloggen nedenfor begrenses til én i sekundet
   if (ALARM_SEVERITIES.includes(ev.severity)) {
-    if (truth) raiseAlarm('tag:' + e.tag, { kind: 'calc', source: e.tag, tag: e.tag, severity: ev.severity, text: String(ev.text || '').trim() || `${e.tag} is true` }, false);
+    if (truth) raiseAlarm('tag:' + e.tag, { kind: 'calc', source: VEHICLE || e.tag, tag: e.tag, severity: ev.severity, text: String(ev.text || '').trim() || `${e.tag} is true` }, false);
     else clearAlarm('tag:' + e.tag, false);
   }
   if (e.lastTruth === undefined) {            // det første sikre resultatet
@@ -299,8 +303,8 @@ function flushCalcEvent(e) {
   e.flips = 0;
   e.lastEvent = mono();
   e.loggedTruth = e.lastTruth;
-  if (e.lastTruth) pushEvent({ source: e.tag, severity: ev.severity, message: text + more });
-  else pushEvent({ source: e.tag, severity: 'info', message: `Cleared: ${text}${more}` });
+  if (e.lastTruth) pushEvent({ source: VEHICLE || e.tag, tag: e.tag, severity: ev.severity, message: text + more });
+  else pushEvent({ source: VEHICLE || e.tag, tag: e.tag, severity: 'info', message: `Cleared: ${text}${more}` });
 }
 
 // Tidsfunksjoner endrer seg med klokken selv når ingen inngang gjør det: sjekk de beregningene
@@ -417,8 +421,8 @@ function applyCodeChanges(codes, changes) {
 // Ditt eget navn og din egen beskrivelse for en tag, i stedet for en endring i PLS-programmet:
 // taggen beholder navnet sitt, så skjermbilder, regler og lagret historikk forblir som de er, og
 // HMI-en viser ditt. En egen fil ved siden av prosjektet,
-// som kodetekstene. Et navn lagret for kv_1.bit05 mens prosjektvariabelen kv = kv_1, lagres som
-// ${kv}.bit05, så det følger variabelen: et kjøretøy med kv = kv_2 får de samme navnene.
+// som kodetekstene. Et navn lagret for pls.bit05 mens prosjektvariabelen kv = pls, lagres som
+// ${kv}.bit05, så det følger variabelen: en enhet med kv = pls2 får de samme navnene.
 let tagNames = new Map();   // tag (variabler satt inn) -> { name, info, key }
 
 function readNames() {
@@ -457,7 +461,7 @@ function indexNames() {
   tagNames = next;
 }
 
-// kv_1.bit05 -> ${kv}.bit05 når en prosjektvariabel angir enheten
+// pls.bit05 -> ${kv}.bit05 når en prosjektvariabel angir enheten
 function namesKey(tag) {
   for (const k of Object.keys(projectVars)) {
     const v = projectVars[k];
@@ -645,7 +649,7 @@ function raiseAlarm(key, info, log) {
   if (!a) { a = { key, count: 0 }; alarms.set(key, a); trimAlarms(); }
   Object.assign(a, info, { active: true, acked: false, since: now(), ts: now(), clearedAt: null });
   a.count++;
-  if (log) pushEvent({ source: a.source, severity: a.severity, message: a.text });
+  if (log) pushEvent({ source: a.source, tag: a.tag, severity: a.severity, message: a.text });
   broadcastAlarms();
 }
 function clearAlarm(key, log) {
@@ -655,7 +659,7 @@ function clearAlarm(key, log) {
   if (!a || !a.active) return;
   a.active = false;
   a.clearedAt = a.ts = now();
-  if (log) pushEvent({ source: a.source, severity: 'info', message: `Cleared: ${a.text}` });
+  if (log) pushEvent({ source: a.source, tag: a.tag, severity: 'info', message: `Cleared: ${a.text}` });
   if (a.acked) alarms.delete(key);   // gått over og kvittert: tilbake til normal
   broadcastAlarms();
 }
@@ -733,6 +737,7 @@ function pushEvent(ev) {
     severity: ['info', 'warning', 'alarm'].includes(ev.severity) ? ev.severity : 'info',
     message: String(ev.message == null ? '' : ev.message),
   };
+  if (ev.tag && typeof ev.tag === 'string') e.tag = ev.tag;   // taggen bak hendelsen, når det finnes en
   events.push(e);
   if (events.length > EVENTS_LEN) events.shift();
   broadcastToHmi(e);
@@ -1182,6 +1187,7 @@ setInterval(() => {
 
 server.listen(PORT, () => {
   log(`HMI hub listening on http://localhost:${PORT}  (ws://<this-host>:${PORT})`);
+  if (VEHICLE) log(`vehicle ${VEHICLE}: the source of the calculations' alarms and events`);
   log(`Node.js:     ${process.version} on ${process.platform}/${process.arch}`);
   log(`config file: ${CONFIG_PATH}`);
   log(`assets:      ${ASSET_DIR}`);

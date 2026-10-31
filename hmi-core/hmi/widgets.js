@@ -1094,8 +1094,8 @@
   const SPAN_MIN = 10e3, SPAN_MAX = 31 * 86400e3;
   const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
   const globRe = s => new RegExp('^' + s.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*') + '$');
-  // "kv_1.*" tar med av/på-taggene (dataType boolean) som passer, sortert; et navn alene tas med
-  // som det er (på når verdien ikke er 0); "!kv_1.link" tar en tag eller en gruppe ut igjen.
+  // "pls.*" tar med av/på-taggene (dataType boolean) som passer, sortert; et navn alene tas med
+  // som det er (på når verdien ikke er 0); "!pls.link" tar en tag eller en gruppe ut igjen.
   // known: tagoversikten fra huben (navn -> info)
   function timelineTags(spec, known) {
     const out = [];
@@ -1158,7 +1158,7 @@
     props: [
       P.label('Timeline'),
       { key: 'tags', label: 'Signals (comma separated)', type: 'tags', default: '*',
-        hint: '* is every digital (on/off) tag, kv_1.* those of one device. A tag named on its own is on when it isn’t 0. !kv_1.link leaves one out. Up to 128 signals' },
+        hint: '* is every digital (on/off) tag, pls.* those of one device. A tag named on its own is on when it isn’t 0. !pls.link leaves one out. Up to 128 signals' },
       { key: 'window', label: 'Time range (seconds)', type: 'number', default: 600,
         hint: 'What it shows at first. In Run mode, drag sideways to go back in time, and use the mouse wheel or two fingers to zoom. The hub keeps the last 600 changes of each tag' },
       { key: 'onlyActive', label: 'Hide signals that stay off', type: 'bool', default: false,
@@ -1170,7 +1170,7 @@
       P.color('On colour', '#43c483'),
       P.labelSize(), P.textSize('Names and axis size'),
     ],
-    // taggene følger tagoversikten (kv_1.*): appen monterer widgeten på nytt når listen endres
+    // taggene følger tagoversikten (pls.*): appen monterer widgeten på nytt når listen endres
     byPattern: true,
     tags: (w, known) => timelineTags(w.props.tags, known).slice(0, LANES_MAX),
     mount(root, w, ctx) {

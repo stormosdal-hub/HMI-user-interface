@@ -87,8 +87,8 @@ resultatet forblir foreldet (stale).
 
 | Form | Eksempel | Merknader |
 |---|---|---|
-| `device.name` | `kv_1.speedAct` | Et tagnavn med minst ett punktum. Delene etter den første kan begynne med et siffer: `kv_1.bit00`. |
-| `${variable}.name` | `${kv}.speedAct` | Prosjektvariabelen fylles inn før formelen leses (`kv=kv_1`). Endre variabelen, så følger formelen etter. |
+| `device.name` | `pls.speedAct` | Et tagnavn med minst ett punktum. Delene etter den første kan begynne med et siffer: `pls.bit00`. |
+| `${variable}.name` | `${kv}.speedAct` | Prosjektvariabelen fylles inn før formelen leses (`kv=pls`). Endre variabelen, så følger formelen etter. |
 | `calc.name` | `calc.kv_speed_rpm` | Resultatet av en annen beregning. |
 | `[any name]` | `[plc-2.motor-temp]` | Hakeparenteser for navn med `-` eller andre tegn. |
 
@@ -346,7 +346,7 @@ For signaler som kan flimre av og på, legg til `held` eller `stretch`, så hver
 
 ## 11. Eksempler etter oppgave
 
-I disse eksemplene er `${kv}` Kjoreverk-PLS-en (`kv=kv_1`). Bytt ut taggene med dine egne.
+I disse eksemplene er `${kv}` Kjoreverk-PLS-en (`kv=pls`). Bytt ut taggene med dine egne.
 
 ### Omregninger og avledede verdier
 
@@ -436,7 +436,7 @@ Noen av disse trenger en forklaring:
 | *uses calc.x, which is not defined* | Formelen bruker en beregning som ikke finnes |
 | *calc.x is defined more than once* | To beregninger med samme navn |
 | *the name may only use letters, digits and _ (dots between parts)* | Et ugyldig navn |
-| *waiting for kv_1.speedAct* (en merknad, ikke en feil) | Den inngangen har ingen verdi ennå: enheten er ikke tilkoblet |
+| *waiting for pls.speedAct* (en merknad, ikke en feil) | Den inngangen har ingen verdi ennå: enheten er ikke tilkoblet |
 | *result is infinite (division by zero?)* | En divisjon med null; beskytt den med `if(b != 0, a / b, 0)` |
 | *result is not a number* | Som regel tekst som inndata, eller `sqrt` eller `log` av et negativt tall |
 

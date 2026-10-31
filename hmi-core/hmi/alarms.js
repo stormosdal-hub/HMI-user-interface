@@ -67,6 +67,9 @@
     const msg = el('span', 'al-msg');
     msg.append(el('b', null, a.source), document.createTextNode(a.text));
     if (a.count > 1) msg.append(el('span', 'al-count', `×${a.count}`));
+    // taggen bak alarmen; en beregning uten kjøreverksnavn har den allerede som kilde
+    if (a.tag && a.tag !== a.source) msg.append(el('span', 'al-tag', a.tag));
+    msg.title = `${a.source}: ${a.text}` + (a.tag ? `\nTag: ${a.tag}` : '');
     const st = el('span', 'al-state', stateText(a));
     const tools = el('span', 'al-tools');
     if (a.codes && a.value != null && actions.openCode) {
@@ -140,7 +143,7 @@
     name: 'Alarm list', hint: 'Active alarms, with Ack', size: [460, 200],
     props: [
       { key: 'label', label: 'Label', type: 'text', default: 'Alarms' },
-      { key: 'source', label: 'Source starts with', type: 'text', default: '', hint: 'Leave empty for every alarm. kv_1 shows the PLC’s alarms only' },
+      { key: 'source', label: 'Source starts with', type: 'text', default: '', hint: 'Leave empty for every alarm. Example: kv_52, the PLC’s and the calculations’ alarms on that vehicle' },
       { key: 'minSeverity', label: 'Show from', type: 'select', options: ['warning', 'alarm'], default: 'warning' },
       H.commonProps.labelSize(), H.commonProps.textSize('Row text size'),
     ],

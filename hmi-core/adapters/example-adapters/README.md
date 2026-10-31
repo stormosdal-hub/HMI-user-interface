@@ -36,8 +36,8 @@ tjeneste på Pi-en.
 
 - **Et navn som blir tagprefikset.** Adapteren kobler til som f.eks. `py_1`, og alle taggene
   dens heter `py_1.<noe>`. Navnet må være unikt på huben: to enheter med samme navn tar
-  taggene fra hverandre. Bruk bokstaver, sifre og `_`. `kv_1` er PLS-en, og `calc` er tatt av
-  huben.
+  taggene fra hverandre. Bruk bokstaver, sifre og `_`. `pls` er PLS-en (den kobler til med
+  kjøreverkets navn, f.eks. `kv_52`), og `calc` er tatt av huben.
 - **Taggene registreres** med type (`number`, `boolean` eller `string`), måleenhet, om de er
   skrivbare, og verdien de har nå. Da finnes de i HMI-ens tagoversikt med en gang.
 - **Bare endrede verdier sendes.** Programmet kan kalle `set()` så ofte det vil; adapteren

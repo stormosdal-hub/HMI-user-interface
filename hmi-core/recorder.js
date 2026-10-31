@@ -20,9 +20,10 @@
  *   node recorder.js [--config /etc/hmi-recorder.json] [ws://localhost:8080]
  *
  * Oppsettet er en JSON-fil som bare leses (config/recorder.example.json viser alt):
- *   { "vehicle": "kv07", "server": "http://dbserver:8090", "token": "...", "queueMB": 64, "sendSeconds": 10 }
- * Uten --config: /etc/hmi-recorder.json, ellers config/recorder.json. vehicle er vertsnavnet
- * hvis det mangler. --vehicle, --server, --token og --queue-mb overstyrer filen.
+ *   { "server": "http://dbserver:8090", "token": "...", "queueMB": 64, "sendSeconds": 10 }
+ * Uten --config: /etc/hmi-recorder.json, ellers config/recorder.json. Kjøreverkets id er
+ * kjøreverkets navn i /etc/kjoreverk/vehicle (det adapteren og huben også bruker), eller
+ * vertsnavnet. "vehicle" i filen, --vehicle, --server, --token og --queue-mb overstyrer.
  *
  * Kjører på Node 10, som huben.
  */
@@ -39,6 +40,7 @@ const { performance } = require('perf_hooks');
 const WebSocket = require('ws');
 const { compilePatterns, compileRules, ruleFor, createRecorderRules, replayRules, checkRecording, eventWanted,
   activePauses, pauseMatcher, pauseText, localStamp } = require('./lib/record-rules');
+const { vehicleName } = require('./lib/vehicle');
 
 const VERSION = '1.0.0';
 const PROTOCOL = 1;
@@ -60,7 +62,7 @@ function readSettings() {
 }
 const { file: SETTINGS_FILE, s: settings } = readSettings();
 const HUB = args.find(a => /^wss?:\/\//.test(a)) || settings.hub || process.env.HUB_URL || 'ws://localhost:8080';
-const VEHICLE = String(opt('--vehicle') || settings.vehicle || os.hostname()).trim();
+const VEHICLE = String(opt('--vehicle') || settings.vehicle || vehicleName() || os.hostname()).trim();
 const SERVER = String(opt('--server') || settings.server || '').trim().replace(/\/+$/, '');
 const TOKEN = String(opt('--token') || settings.token || '').trim();
 const QUEUE_MB = Number(opt('--queue-mb') || settings.queueMB) > 0 ? Number(opt('--queue-mb') || settings.queueMB) : 64;
@@ -87,10 +89,16 @@ const registry = new Map();   // navn -> { name, dataType, unit, label, descript
 const names = new Map();      // samme tagnavn som én streng i minnet, ikke én per melding
 const nameOf = s => { let x = names.get(s); if (x === undefined) { names.set(s, s); x = s; } return x; };
 let catalogDirty = true;      // tagoversikten skal med i neste batch
+const ownPrefix = new Map();   // adapteren -> prefiksene til taggene dens (kv_52 -> pls), for pausene
 function onTags(list) {
   let changed = false;
   for (const t of list || []) {
     if (!t || !t.name || t.name.startsWith('rec.')) continue;
+    const dot = t.name.indexOf('.');
+    if (t.owner && t.owner !== 'hub' && dot > 0) {
+      if (!ownPrefix.has(t.owner)) ownPrefix.set(t.owner, new Set());
+      ownPrefix.get(t.owner).add(t.name.slice(0, dot));
+    }
     const info = { name: nameOf(t.name), dataType: t.dataType || 'number', unit: t.unit || '', label: t.label || '', description: t.info || t.description || '' };
     const prev = registry.get(info.name);
     if (!prev || prev.dataType !== info.dataType || prev.unit !== info.unit || prev.label !== info.label || prev.description !== info.description) {
@@ -276,9 +284,16 @@ function updatePauses() {
 // ---------------------------------------------------------------- hendelsene
 const seenEvents = new Set();
 let hubEvents = [];           // hubens liste fra da leseren koblet seg til, til hullet etter en omstart
+// en pause dekker en hendelse med en tag bak (en alarm) når den dekker taggen, og en enhets egne
+// hendelser når den dekker taggene dens: kilden kv_52 med taggene pls.* følger pls.*
+function eventPaused(it) {
+  const m = pauseMatcher(pausesOn, vars);
+  if (it.ofTag) return m.tag(it.ofTag);
+  return m.source(it.source) || [...(ownPrefix.get(it.source) || [])].some(p => m.source(p));
+}
 function takeEvent(it) {
   if (!eventWanted(recording, it.severity)) return;
-  if (pausesOn.length && pauseMatcher(pausesOn, vars).source(String(it.source || ''))) return;
+  if (pausesOn.length && eventPaused(it)) return;
   enqueue(it);
 }
 function onEvent(ev, src) {
@@ -288,6 +303,7 @@ function onEvent(ev, src) {
   seenEvents.add(key);
   if (seenEvents.size > 3000) seenEvents.delete(seenEvents.values().next().value);
   const it = { k: 'ev', ts: ev.ts, source: String(ev.source || ''), severity: ev.severity || 'info', message: String(ev.message || ''), src };
+  if (typeof ev.tag === 'string' && ev.tag) it.ofTag = ev.tag;   // bare for pausene; sendes ikke
   if (!rulesReady()) enqueueRaw(it); else takeEvent(it);
 }
 

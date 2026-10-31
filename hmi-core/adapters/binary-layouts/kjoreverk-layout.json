@@ -13,7 +13,7 @@
     "Hold-for-å-kjøre-bit (jogg, krypkjøring): legg til  \"overrides\": { \"cmd_bitNN\": { \"hold\": 600 } }  under toPlc, og gi HMI-knappen \"Repeat while held\" = 200 ms. Handlingsbit som må slå seg av selv (start, reset), kan bruke \"autoReset\" i stedet. Enkeltbit kan gis nye navn på samme måte: \"cmd_bitNN\": { \"name\": \"jog_fwd\", \"hold\": 600 }."
   ],
   "mode": "fixed",
-  "device": "kv_1",
+  "device": "pls",
   "byteOrder": "big",
   "bitOrder": "lsb0",
   "connect": "10.0.123.51:2000",

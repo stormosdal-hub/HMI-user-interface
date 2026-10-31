@@ -138,10 +138,12 @@ det som aldri skal lagres.
 
 - **Pi-klokka er fasiten for alt.** Huben stempler sanntidsverdiene med den, og adapteren
   plasserer ringen etter den. Alt lagres i UTC.
-- **Pi-ene synkroniserer mot serveren med `chrony`**, og PLS-en mot Pi-en med den innebygde
-  NTP-klienten. Serverens egen kilde står i [SERVER-PLAN.md](SERVER-PLAN.md).
+- **Tidsserveren er NTP-serveren på nettet, `10.0.0.104`.** Pi-ene og den sentrale serveren
+  synkroniserer hver for seg mot den, med `systemd-timesyncd` eller `chrony`.
+- **PLS-klokka trenger ikke være riktig:** adapteren plasserer ringen etter Pi-klokka. PLS-en kan
+  likevel bruke `10.0.0.104` med den innebygde NTP-klienten, hvis den når den.
 - **Problemet:** en Pi som starter uten nett (og uten batteri på RTC-en) har feil tid til
-  `chrony` får kontakt. Da hopper klokka.
+  den får kontakt med tidsserveren. Da hopper klokka.
 - **Løsningen, uten disk:**
   - **Recorderen noterer en monoton tid for hvert punkt**, og følger med på forskjellen mellom
     veggklokka og den monotone klokka. Endrer forskjellen seg brått, har klokka hoppet, og
@@ -150,13 +152,11 @@ det som aldri skal lagres.
     `chronyc`) hvert minutt. Serveren får aldri punkter med en tid ingen vet om er riktig.
   - **Svarer serveren, men klokka blir ikke synkronisert innen 10 minutter,** sendes punktene
     likevel, merket at klokka ikke var synkronisert.
-- **Fra den forrige planen beholdes:**
-  - GPS på serveren
-  - `chrony` på Pi-ene
-  - NTP-klienten i PLS-en mot Pi-en
-  - at lagrede tider aldri skrives om på serveren
-- **Fra den forrige planen droppes:** tjenesten som stilte Pi-klokka etter PLS-en. Den trengte
-  root og mange sperrer, og hoppene rettes nå i køen.
+- **Fra den forrige planen beholdes:** at lagrede tider aldri skrives om på serveren.
+- **Fra den forrige planen droppes:**
+  - Tjenesten som stilte Pi-klokka etter PLS-en. Den trengte root og mange sperrer, og hoppene
+    rettes nå i køen.
+  - GPS på serveren, og serveren som tidsserver for kjøreverkene. `10.0.0.104` er tidsserveren.
 
 ### 3.6 Hull blir synlige
 
@@ -196,7 +196,7 @@ med, og fra hvilken alvorlighetsgrad, står i reglene (`events`).
 2. **Pi-en starter: huben, adapteren og recorderen.** Adapteren kobler seg til PLS-en, får ringen,
    og sender `restore` til huben. Er recorderen allerede koblet til, får den punktene som
    `restored`.
-3. **Klokka:** til `chrony` er synkronisert, holder recorderen punktene og retter dem hvis klokka
+3. **Klokka:** til klokka er synkronisert, holder recorderen punktene og retter dem hvis klokka
    hopper ([3.5](#35-klokka)).
 4. **Serveren svarer** (`POST /hello`) og sier hvilket tidspunkt den har nyeste data fra for dette
    kjøreverket.
@@ -218,7 +218,7 @@ alle sine 600 endringer per tag, og hullet blir lite eller ingenting.
 |---|---|---|
 | `lib/record-rules.js` | Tilbake fra 4443ef8. Uten filhåndteringen, med reglene som JSON fra serveren, pauser i ms, `eventsMin`, og regler for punkter i etterkant | bygd |
 | `recorder.js` | De to forbindelsene til huben, reglene, køen i RAM, batcher til serveren, klokkehopp, hull fra hubens minne, svar på historikkspørsmål, status-taggene | bygd |
-| Installasjon | systemd-tjeneste, oppsettfilen (id, nøkkel, server), klokka mot serveren. Beskrevet i `README_systemd-service.md` | bygd |
+| Installasjon | systemd-tjeneste, oppsettfilen (id, nøkkel, server), klokka mot tidsserveren. Beskrevet i `README_systemd-service.md` | bygd |
 | Test | En falsk server etter [PROTOKOLL.md](PROTOKOLL.md) og den falske PLS-en: køen, at en batch sendes på nytt og lagres én gang, brudd, 503, 400, 413, nye regler, pauser, stopp, klokkehopp, hull fra hubens minne og full kø | bygd |
 | README | Avsnittet om recorderen, kommandolinjen og rader under Feilsøking | bygd |
 | `hub.js`, adapteren, HMI-en | ingen endring | uendret |
@@ -232,7 +232,7 @@ Hver fase virker alene.
 3. **Recorderen mot den ekte serveren** på Pi 5-en, med ett kjøreverk.
 4. **Reglene fra serveren.** Web-siden for reglene lages i serverprosjektet.
 5. **Trendene fra databasen** ([3.8](#38-trendene-i-hmi-en-henter-fra-databasen)).
-6. **Klokka:** `chrony` på serveren og Pi-ene. GPS senere.
+6. **Klokka:** serveren og Pi-ene mot tidsserveren `10.0.0.104`.
 7. **Ut på alle 42 kjøreverkene.**
 
 ## 7. Åpne spørsmål
@@ -241,8 +241,6 @@ Hver fase virker alene.
   Det avgjør taket på køen, og hvor ofte klokka er feil ved oppstart.
 - **Hvor lange kan WiFi-bruddene bli?** Med taket på køen avgjør det når de eldste punktene må
   kastes.
-- **Hva heter kjøreverkene?** For eksempel `kv01` til `kv42`, gjerne det samme som vertsnavnet
-  til Pi-en.
 - **Når alle kjøreverkene serveren direkte**, og har serveren et fast navn eller en fast
   adresse?
 - **Overlay-filsystem på Pi-ene i kjøreverkene?** I `raspi-config` (Performance Options →

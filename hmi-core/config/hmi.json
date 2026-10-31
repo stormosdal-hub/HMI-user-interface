@@ -10,7 +10,7 @@
   "vars": {
     "dev": "sim_1",
     "mono": "mono_1",
-    "kv": "kv_1"
+    "kv": "pls"
   },
   "screens": [
     {

@@ -1,5 +1,4 @@
 {
-  "vehicle": "kv07",
   "server": "http://dbserver:8090",
   "token": "the key for this vehicle, made on the central server",
   "queueMB": 64,

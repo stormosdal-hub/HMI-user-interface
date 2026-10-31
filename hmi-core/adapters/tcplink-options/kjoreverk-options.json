@@ -9,7 +9,7 @@
     "Bitene i Statusord følger ZSW1 for standardtelegram 1, 2, 3 og 5 (V90-bruksanvisningen, avsnitt 8.4.1). Andre telegrammer bruker bit 11..15 annerledes.",
     "connect er adressen til PLS-en; --plc=<ip>:<port> på kommandolinjen overstyrer den. PLS-en tar imot én klient per TcpLink-instans: stopp binary-adapter.js og andre klienter på samme port først."
   ],
-  "device": "kv_1",
+  "device": "pls",
   "connect": "10.0.123.51:2000",
   "commands": true,
   "sendEveryMs": 500,

@@ -39,7 +39,7 @@
  *
  * Pauser stopper lagringen en stund, f.eks. under vedlikehold, så testverdier ikke blandes med
  * ekte verdier. since og until er millisekunder i UTC; until: null = til pausen oppheves.
- * tags: hvilke tagger ("*" alle sammen, "kv_1.*" én enhet). Der en pause begynner, får hver pausede
+ * tags: hvilke tagger ("*" alle sammen, "pls.*" én enhet). Der en pause begynner, får hver pausede
  * tag et merke (q 3, ingen verdi), så en trend viser et hull; når den slutter, lagres hver tags
  * verdi i det øyeblikket. Hendelser fra pausede tagger og enheter utelates også.
  *
@@ -364,8 +364,9 @@ function activePauses(recording, at) {
   return (recording && Array.isArray(recording.pauses) ? recording.pauses : [])
     .filter(p => p.since <= at && (p.until === null || p.until === undefined || p.until > at));
 }
-// hvilke tagger pausene dekker, og hvilke hendelseskilder: en enhets egne hendelser (kilde kv_1)
-// og alarmene til taggene dens (kilde kv_1.faultCode) følger taggene (kv_1.*)
+// hvilke tagger pausene dekker, og hvilke hendelseskilder: en kilde som heter som et prefiks (pls)
+// følger taggene (pls.*). recorder.js kobler adapterens navn (kv_52) til prefikset på taggene dens,
+// og en alarm til taggen bak den.
 function pauseMatcher(pauses, vars) {
   const res = [].concat(...pauses.map(p => compilePatterns(p.tags, vars)));
   return {
@@ -373,7 +374,7 @@ function pauseMatcher(pauses, vars) {
     source: src => res.some(re => re.test(src) || re.test(src + '.\u0001')),
   };
 }
-// en pause i ord: "all tags until 15:02 (maintenance)", "kv_1.* until ..." med variablene satt inn
+// en pause i ord: "all tags until 15:02 (maintenance)", "pls.* until ..." med variablene satt inn
 function pauseText(p, now, vars) {
   const day = localStamp(now === undefined || now === null ? Date.now() : now).slice(0, 10);
   const when = t => { const s = localStamp(t); return s.slice(0, 10) === day ? s.slice(11, 16) : s.slice(0, 16); };

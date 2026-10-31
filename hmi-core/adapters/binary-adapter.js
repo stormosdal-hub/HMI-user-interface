@@ -23,6 +23,8 @@
  *   node adapters/binary-adapter.js <layout.json> --dump    logg hver blokk i hex mens den kjører
  *   node adapters/binary-adapter.js <layout.json> --plc=192.168.0.1:2000   koble til PLS-en der
  *                                        (--plc=2000 venter i stedet på PLS-en på den porten)
+ *   node adapters/binary-adapter.js <layout.json> --name=kv_52   navnet i huben, som alarmlisten viser (ellers
+ *                                       kjøreverkets navn i /etc/kjoreverk/vehicle, eller "device")
  *   node adapters/binary-adapter.js <layout.json> --commands  send kommandoer selv om layouten
  *                                                            har toPlc.enabled = false (f.eks. for en test)
  *
@@ -32,6 +34,7 @@
 const net = require('net');
 const fs = require('fs');
 const path = require('path');
+const { vehicleName } = require('../lib/vehicle');
 
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 // Tidsintervaller bruker en monoton klokke, så å stille datamaskinens klokke kan ikke utløse
@@ -130,7 +133,7 @@ function loadLayout(file) {
   if (L.mode !== 'fixed') throw new Error(`unknown mode "${L.mode}" (use "frames" or "fixed")`);
   L.be = (L.byteOrder || 'big') === 'big';
   L.msb0 = (L.bitOrder || 'lsb0') === 'msb0';
-  if (!L.device || !NAME_RX.test(L.device)) throw new Error('"device" (the tag prefix, e.g. "kv_1") is required');
+  if (!L.device || !NAME_RX.test(L.device)) throw new Error('"device" (the tag prefix, e.g. "pls") is required');
   L.fromPlc = L.fromPlc ? block(L, L.fromPlc, 'fromPlc') : null;
   L.toPlc = L.toPlc ? block(L, L.toPlc, 'toPlc') : null;
   if (!L.fromPlc && !L.toPlc) throw new Error('a fixed layout needs "fromPlc", "toPlc" or both');
@@ -381,8 +384,8 @@ function runFixed(L, hubUrl, portArg, dump) {
     ws = new WebSocket(hubUrl);
     ws.on('open', () => {
       hubOpen = true;
-      log(`hub ${hubUrl} connected as ${L.device}`);
-      toHub({ type: 'hello', role: 'adapter', name: L.device });
+      log(`hub ${hubUrl} connected as ${L.name || L.device}`);
+      toHub({ type: 'hello', role: 'adapter', name: L.name || L.device });
       registerTags();
       sent = {};
       toHub({ type: 'update', tag: T('link'), value: link });
@@ -789,11 +792,13 @@ if (require.main === module) {
     if (v.includes(':')) { L.connect = v; } else { delete L.connect; L.listen = +v; }
   }
   if (L.mode === 'fixed') {
+    L.name = flagValue('--name') || vehicleName() || '';   // navnet i huben; taggene beholder "device" som prefiks
+    if (L.name && !NAME_RX.test(L.name)) { console.error(`--name=${L.name}: letters, digits, _ . - only`); process.exit(1); }
     if (flags.has('--commands') && L.toPlc && !L.toPlc.enabled) {
       L.toPlc.enabled = true;
       log('commands enabled from the command line (--commands); the layout itself has them disabled');
     }
-    log(`binary adapter (fixed) for "${L.device}", layout ${path.basename(file)}; commands to the PLC ${L.toPlc && L.toPlc.enabled ? 'enabled' : 'DISABLED'}`);
+    log(`binary adapter (fixed) for "${L.device}"${L.name && L.name !== L.device ? `, named ${L.name} in the hub` : ''}, layout ${path.basename(file)}; commands to the PLC ${L.toPlc && L.toPlc.enabled ? 'enabled' : 'DISABLED'}`);
     runFixed(L, hubUrl, pos[2], flags.has('--dump'));
   } else runFrames(L, hubUrl, pos[2]);
 }
