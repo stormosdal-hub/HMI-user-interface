@@ -64,6 +64,10 @@ echo 'SCRIPT_ARGS=hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000' |
   Adapteren bruker det som navn i huben, så alarmlisten sier *kv_52 Drive fault …*, og
   recorderen bruker det som kjøreverkets id på serveren. Taggene heter `pls.*` i alle
   kjøreverkene. Se *Kjøreverkets navn* i `hmi-core/README.md`.
+- **Navnet må være nøyaktig likt koden kjøreverket er registrert med på den sentrale serveren**
+  (siden *Kjøreverk* der). Står det `kv_52` her og `kv52` på serveren, avviser serveren nøkkelen:
+  *the key belongs to kv52, not kv_52*. Rett det ene eller det andre; på serveren kan koden endres
+  i feltet *Kode* på kjøreverket.
 - `tcplink-adapter.js` trenger ingen layoutfil: navnene og størrelsene kommer fra PLS-en. Resten
   (tagprefikset, alarmene og hold-for-å-kjøre) står i
   `hmi-core/adapters/tcplink-options/kjoreverk-options.json`, som den finner av seg selv.
@@ -128,7 +132,9 @@ avsnittet om recorderen i `hmi-core/README.md`. Den bruker den samme malen.
 ### 1. Oppsettet
 
 Serverens adresse og nøkkelen, som du lager på serveren. Kjøreverkets navn tar recorderen fra
-`/etc/kjoreverk/vehicle` (se [1. Kjøreverkets navn](#1-kjøreverkets-navn-og-konfigurasjonsfilene-for-instansene)):
+`/etc/kjoreverk/vehicle` (se [1. Kjøreverkets navn](#1-kjøreverkets-navn-og-konfigurasjonsfilene-for-instansene)),
+og det må være koden kjøreverket har på serveren. `"vehicle"` i filen under overstyrer navnet, bare
+for recorderen:
 
 ```bash
 sudo nano /etc/hmi-recorder.json

@@ -1119,7 +1119,7 @@ echo kv_52 | sudo tee /etc/kjoreverk/vehicle
 |---|---|
 | `tcplink-adapter.js` og `binary-adapter.js` | navnet i huben: kilden i alarmlisten og hendelsesloggen (*kv_52 Drive fault F60209*) |
 | `hub.js` | kilden for alarmene og hendelsene fra beregningene |
-| `recorder.js` | kjøreverkets id på den sentrale serveren |
+| `recorder.js` | kjøreverkets id på den sentrale serveren. Den må være nøyaktig lik koden kjøreverket er registrert med der, ellers avviser serveren nøkkelen |
 
 - **Navnet:** en bokstav først, så bokstaver, sifre, `_`, `.` og `-`, høyst 32 tegn.
 - **Uten filen** er kilden tagprefikset (`pls`) og beregningens tag, og recorderen bruker
@@ -1684,6 +1684,7 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | En trend viser bare de siste minuttene | Huben har de siste 600 endringene av hver tag i minnet, og ingen database er koblet til. For en måling som endrer seg hele tiden, er det noen minutter. Se [8](#8-lagring-til-database) |
 | En trend sier *History: the central server can’t be reached* | Recorderen når ikke serveren, så trenden viser hubens minne. `rec.server` sier det samme; recorderens logg sier hvorfor (`journalctl -u kjoreverk@recorder.service`) |
 | `rec.server` er `key refused` | Serveren kjenner ikke nøkkelen (`token`) i `/etc/hmi-recorder.json`, eller den er trukket tilbake. Lag en ny på serveren, og start recorderen på nytt. Den prøver ellers igjen hvert 5. minutt |
+| `rec.server` er `key refused`, og loggen sier *the key belongs to kv52, not kv_52* | Kjøreverkets navn (`/etc/kjoreverk/vehicle`, eller `"vehicle"` i `/etc/hmi-recorder.json`) er ikke koden kjøreverket har på serveren. Første linje i recorderens logg viser navnet den bruker: `recorder 1.0.0 for kv_52`. Gi Pi-en koden fra serveren, eller endre koden på serveren (feltet *Kode* på siden Kjøreverk), og start recorderen på nytt |
 | `rec.clock_synced` er false, og ingenting sendes | Klokka er ikke synkronisert: `timedatectl` viser *System clock synchronized: no*. Sjekk `chrony` eller `systemd-timesyncd` mot tidsserveren `10.0.0.104`. Etter 10 minutter sendes verdiene likevel, merket. På en maskin uten `timedatectl` og `chronyc` regnes klokka som riktig |
 | `rec.dropped` øker | Køen var full: serveren har vært borte lenge, eller reglene lagrer mye. Serveren får vite om hullet. Øk `queueMB`, eller stram inn reglene |
 | En tidslinje er tom fram til et tidspunkt | Huben har ingen verdi for signalet før det: huben startet, eller adapteren koblet til, da. Det PLS-en har logget i ringbufferen, kommer tilbake (se [Historikken fra PLS-en](#historikken-fra-pls-en)); andre signaler starter når adapteren kobler til |
