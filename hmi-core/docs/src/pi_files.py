@@ -72,7 +72,7 @@ opt_entries = [
     (1, 'config/', '', INK),
     (2, 'hmi.json', 'prosjektet: skjermbildene, variablene og beregningene', CYAN),
     (2, 'codes.json', 'tekstene til feil- og varselkodene', CYAN),
-    (2, 'tagnames.json', 'dine egne navn på taggene (lages første gang)', CYAN),
+    (2, 'tagnames.json', 'dine egne navn på taggene, og hvilke som gir alarm (fra Tag-list)', CYAN),
     (2, 'assets/', 'tegningene (SVG)', CYAN),
     (1, 'node_modules/', 'ws og three, så Pi-en ikke trenger internett', INK2),
     (1, 'docs/', 'dokumentasjonen og diagrammene', INK2),

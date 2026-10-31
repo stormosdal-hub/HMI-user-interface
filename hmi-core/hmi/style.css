@@ -727,6 +727,14 @@ button.tb-row:hover, button.tb-row:focus-visible { background: var(--panel-3); o
 .tb-edit input { width: 200px; background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; color: var(--ink); }
 .tb-edit label:nth-of-type(2) input { width: 340px; }
 .tb-edit-msg { flex: 1 0 100%; color: var(--alarm); font-size: 12px; }
+.tb-edit select { background: var(--panel-2); border: 1px solid var(--line); border-radius: var(--radius); padding: 6px 8px; color: var(--ink); max-width: 420px; }
+.tb-edit-alarm, .tb-alarm-detail { flex: 1 0 100%; display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: end; }
+.tb-alarm-detail[hidden] { display: none; }
+.tb-edit-alarm { padding-top: 8px; border-top: 1px dashed var(--line-soft); }
+.tb-edit input.tb-alarm-delay { width: 80px; }
+.tb-alarm { margin-left: 8px; font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; font-size: 10.5px; border: 1px solid currentColor; border-radius: 3px; padding: 0 4px; flex: none; }
+.tb-alarm.alarm { color: var(--alarm); }
+.tb-alarm.warning { color: var(--warn); }
 .tb-edit-msg:empty { display: none; }
 
 /* ---------------------------------------------------------------- velge flere widgeter */

@@ -8,6 +8,8 @@
  *   current       -> taggen feltet har nå (oppløst), uthevet
  *   pick(text)    -> kalles med den valgte taggen; utelat for bare å se
  *   title         -> overskriften (valgfri), f.eks. 'Tag list'
+ *   alarms        -> true: redigeringen har også taggens alarm (bare i Edit-modus)
+ *   codeLists     -> () => kodelistene, til en alarm som slår opp koden (H.codes.lists)
  *   editName(tag, name, info) -> Promise: lagrer ditt eget navn og beskrivelse for en tag
  *                    (tagnavn, holdt av huben); utelat, så blir navn bare vist
  * })
@@ -27,6 +29,13 @@
   };
   const TYPES = { boolean: 'bool', number: 'number', string: 'string' };
   const show = v => (v === null || v === undefined) ? '\u2014' : typeof v === 'boolean' ? String(v) : typeof v === 'number' ? String(+v.toFixed(3)) : String(v);
+  // "Alarm when off, after 2 s: Door open" for en alarm slik huben sender den
+  const isBool = info => info.dataType === 'boolean';
+  const alarmSummary = (a, info) => {
+    const word = a.severity === 'alarm' ? 'Alarm' : 'Warning';
+    const when = a.when === 'false' ? (isBool(info) ? 'off' : '0') : (isBool(info) ? 'on' : 'not 0');
+    return `${word} when ${when}${a.delay ? `, after ${+(a.delay / 1000).toFixed(1)} s` : ''}${a.text ? ': ' + a.text : ''}`;
+  };
 
   H.openTagBrowser = function (opts) {
     const picking = typeof opts.pick === 'function';
@@ -58,15 +67,16 @@
     search.placeholder = 'Search tags\u2026';
     search.setAttribute('aria-label', 'Search tags');
     const kind = el('select');
-    for (const [v, t] of [['all', 'All tags'], ['named', 'With a name'], ['device', 'From devices'], ['calc', 'Calculated'], ['live', 'Live only'], ['stale', 'Stale or no value']]) {
+    for (const [v, t] of [['all', 'All tags'], ['named', 'With a name'], ['alarms', 'Alarms and warnings'], ['device', 'From devices'], ['calc', 'Calculated'], ['live', 'Live only'], ['stale', 'Stale or no value']]) {
       const o = el('option', null, t); o.value = v; kind.append(o);
     }
     bar.append(search, kind);
     // navngiving: et klikk på en tag gir den ditt eget navn og beskrivelse i stedet for å velge den
     let naming = false;
-    const nameBtn = el('button', 'ghost', '✎ Name tags');
+    const nameBtn = el('button', 'ghost', opts.alarms ? '✎ Name and alarm' : '✎ Name tags');
     nameBtn.type = 'button';
-    nameBtn.title = 'Your own name and description for a tag, e.g. bit05 = Door closed. The tag keeps its name.';
+    nameBtn.title = 'Your own name and description for a tag, e.g. bit05 = Door closed. The tag keeps its name.' +
+      (opts.alarms ? ' And whether it comes up in the alarm list.' : '');
     nameBtn.setAttribute('aria-pressed', 'false');
     if (opts.editName) bar.append(nameBtn);
     let useVars = null;
@@ -90,7 +100,7 @@
       naming = !naming;
       nameBtn.classList.toggle('on', naming);
       nameBtn.setAttribute('aria-pressed', String(naming));
-      foot.textContent = naming ? 'Click a tag to give it your own name and description. Make a bit change (open the door, press the button) to find it.' : footText;
+      foot.textContent = naming ? `Click a tag to give it your own name and description${opts.alarms ? ', or make it an alarm' : ''}. Make a bit change (open the door, press the button) to find it.` : footText;
       if (!naming) closeEditor();
     });
 
@@ -116,15 +126,22 @@
       const title = el('div', 'tb-edit-tag', name);
       if (info.deviceLabel) title.append(el('span', 'tb-edit-desc', `  The device calls it “${info.deviceLabel}”. Your name replaces it here; leave it empty to use the device's.`));
       if (info.description) title.append(el('span', 'tb-edit-desc', '  ' + info.description));
-      editBox.append(title, lab('Your name', nameIn), lab('Description', infoIn), save, cancel, msg);
+      editBox.append(title, lab('Your name', nameIn), lab('Description', infoIn));
+      const readAlarm = opts.alarms ? alarmEditor(name, info, lab) : null;
+      editBox.append(save, cancel, msg);
       const doSave = async () => {
         save.disabled = true;
         msg.textContent = '';
         try {
-          await opts.editName(name, nameIn.value.trim(), infoIn.value.trim());
+          const alarm = readAlarm ? readAlarm() : undefined;
+          await opts.editName(name, nameIn.value.trim(), infoIn.value.trim(), alarm);
           info.ownLabel = nameIn.value.trim();
           info.label = info.ownLabel || info.deviceLabel || '';
           info.info = infoIn.value.trim();
+          if (alarm !== undefined) {
+            info.ownAlarm = alarm;
+            info.alarm = alarm ? (alarm.severity === 'none' ? null : alarm) : (info.deviceAlarm || null);
+          }
           closeEditor();
           build();
         } catch (e) { msg.textContent = e.message; save.disabled = false; }
@@ -133,6 +150,65 @@
       cancel.addEventListener('click', closeEditor);
       for (const i of [nameIn, infoIn]) i.addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); doSave(); } });
       nameIn.focus();
+    }
+    // alarmen til én tag: om den kommer i alarmlisten, når, med hvilken tekst. Legger feltene i
+    // editBox og returnerer en funksjon som gir det som skal lagres: undefined (ingen endring
+    // mulig), null (ingen egen: adapterens gjelder), { severity: 'none' } eller hele alarmen.
+    function alarmEditor(name, info, lab) {
+      const sec = el('div', 'tb-edit-alarm');
+      editBox.append(sec);
+      if (info.source === 'calc') {
+        sec.append(el('span', 'tb-edit-desc', 'A calculation gets its alarm in \u0192 Calculations: give it a Warning or Alarm event there.'));
+        return () => undefined;
+      }
+      const dev = info.deviceAlarm || null, mine = info.ownAlarm || null, bool = isBool(info);
+      const level = el('select');
+      const opt = (sel, v, t) => { const o = el('option', null, t); o.value = v; sel.append(o); };
+      if (dev) { opt(level, '', `As the adapter: ${alarmSummary(dev, info)}`); opt(level, 'none', 'No alarm'); }
+      else opt(level, '', 'No alarm');
+      opt(level, 'warning', 'Warning');
+      opt(level, 'alarm', 'Alarm');
+      level.value = mine ? mine.severity : '';
+      const base = mine && mine.severity !== 'none' ? mine : (dev || {});
+      const when = el('select');
+      opt(when, 'true', bool ? 'When it is on' : 'When it is not 0');
+      opt(when, 'false', bool ? 'When it is off' : 'When it is 0');
+      when.value = base.when === 'false' ? 'false' : 'true';
+      const called = info.ownLabel || info.deviceLabel || name;
+      const text = el('input');
+      text.className = 'tb-alarm-text';
+      text.maxLength = 200;
+      text.value = base.text || '';
+      text.placeholder = bool ? called : `${called} = {value}`;
+      text.title = '{value} becomes the value, e.g. Drive fault F{value}. Empty: the tag’s name';
+      const delay = el('input');
+      delay.type = 'number'; delay.min = '0'; delay.max = '3600'; delay.step = '0.1';
+      delay.className = 'tb-alarm-delay';
+      delay.value = String(base.delay ? +(base.delay / 1000).toFixed(1) : 0);
+      delay.title = 'How long it must last before it comes up, so a short flicker doesn’t';
+      const detail = el('div', 'tb-alarm-detail');
+      detail.append(lab('Active', when), lab('Text in the alarm list', text), lab('Delay (s)', delay));
+      let codes = null;
+      if (!bool && opts.codeLists) {
+        codes = el('select');
+        opt(codes, '', 'No code list');
+        for (const l of opts.codeLists()) opt(codes, l.id, l.name);
+        if (base.codes && ![...codes.options].some(o => o.value === base.codes)) opt(codes, base.codes, base.codes + ' (missing)');
+        codes.value = base.codes || '';
+        codes.title = 'Adds the code’s text from Code texts to the alarm';
+        detail.append(lab('Code list', codes));
+      }
+      const sync = () => { detail.hidden = level.value !== 'warning' && level.value !== 'alarm'; };
+      level.addEventListener('change', sync);
+      sync();
+      sec.append(lab('Alarm list', level), detail);
+      return () => {
+        const v = level.value;
+        if (!v) return null;
+        if (v === 'none') return { severity: 'none' };
+        const d = Math.round(Math.max(0, Math.min(3600, Number(delay.value) || 0)) * 1000);
+        return { severity: v, when: when.value, text: text.value.trim(), delay: d, codes: codes && codes.value ? codes.value : null };
+      };
     }
     overlay.append(box);
     document.body.append(overlay);
@@ -163,6 +239,7 @@
       if (q && ![name, info.label, info.info, info.description].some(s => (s || '').toLowerCase().includes(q))) return false;
       const k = kind.value, isCalc = info.source === 'calc', s = state(name, info);
       if (k === 'named' && !info.label) return false;
+      if (k === 'alarms' && !info.alarm) return false;
       if (k === 'device' && isCalc) return false;
       if (k === 'calc' && !isCalc) return false;
       if (k === 'live' && s !== 'live') return false;
@@ -198,6 +275,11 @@
         nm.append(el('span', 'tb-dev', dev + '.'), el('span', null, name.slice(dev.length + 1)));
         if (info.writable) { const wr = el('span', 'tb-rw', 'writable'); nm.append(wr); }
         if (info.label) nm.append(el('span', 'tb-label', info.label));
+        if (info.alarm) {
+          const a = el('span', 'tb-alarm ' + info.alarm.severity, info.alarm.severity === 'alarm' ? '\u26a0 alarm' : '\u26a0 warning');
+          a.title = alarmSummary(info.alarm, info) + (info.ownAlarm ? '' : '\nFrom the adapter (kjoreverk-options.json)');
+          nm.append(a);
+        }
         const valueCell = el('span', 'tb-val'), unitCell = el('span', 'tb-unit', info.unit || ''), ageCell = el('span', 'tb-age');
         const typeCell = el('span', 'tb-type', TYPES[info.dataType] || info.dataType || '');
         const stateCell = el('span', 'tb-state');

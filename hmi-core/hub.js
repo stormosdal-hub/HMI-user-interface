@@ -80,7 +80,8 @@ function isOnline(ownerName) {
 function registrySnapshot() {
   return [...tags.values()].map(t => {
     const n = tagNames.get(t.name), own = n ? n.name : '';
-    return { ...t, online: t.source === 'calc' ? true : isOnline(t.owner), label: own || t.deviceLabel || '', ownLabel: own, info: n ? n.info : '' };
+    return { ...t, online: t.source === 'calc' ? true : isOnline(t.owner), label: own || t.deviceLabel || '', ownLabel: own, info: n ? n.info : '',
+      ownAlarm: n && n.alarm ? n.alarm : null };
   });
 }
 
@@ -117,6 +118,7 @@ function applyUpdate(name, value, ts, quality, from) {
   if (!t) {
     // ukjente tagger registreres underveis, så adaptere kan ta det lettvint
     t = { name, dataType: typeOf(value), unit: '', writable: false, owner: from ? from.name : null };
+    t.alarm = effectiveAlarm(t);
     tags.set(name, t);
     if (from) from.owns.add(name);
     broadcastRegistry();
@@ -417,13 +419,15 @@ function applyCodeChanges(codes, changes) {
 }
 
 // ---------------------------------------------------------------- tagnavn
-// { tags: { "${pls}.bit05": { name: "Dør lukket", info: "Endebryter B12, venstre dør", updated } } }
+// { tags: { "${pls}.bit05": { name: "Dør lukket", info: "Endebryter B12, venstre dør", updated,
+//                            alarm: { severity: "alarm", text: "Door open", when: "false", delay: 2000 } } } }
+// alarm er valgfri: den gjør taggen til en alarm eller advarsel i alarmlisten (se "aktive alarmer").
 // Ditt eget navn og din egen beskrivelse for en tag, i stedet for en endring i PLS-programmet:
 // taggen beholder navnet sitt, så skjermbilder, regler og lagret historikk forblir som de er, og
 // HMI-en viser ditt. En egen fil ved siden av prosjektet,
 // som kodetekstene. Et navn lagret for pls.bit05 mens prosjektvariabelen pls = pls, lagres som
 // ${pls}.bit05, så det følger variabelen: med pls = pls2 får pls2.bit05 det samme navnet.
-let tagNames = new Map();   // tag (variabler satt inn) -> { name, info, key }
+let tagNames = new Map();   // tag (variabler satt inn) -> { name, info, key, alarm }
 
 function readNames() {
   let raw;
@@ -456,9 +460,12 @@ function indexNames() {
   for (const key of keys) {
     const e = rn.names.tags[key];
     if (!e || typeof e !== 'object') continue;
-    next.set(resolveVars(key, projectVars), { name: String(e.name || ''), info: String(e.info || ''), key });
+    let alarm = null;
+    try { alarm = ownAlarmIn(e.alarm); } catch (err) { log(`[names] WARNING ${key}: ${err.message}; the alarm is ignored`); }
+    next.set(resolveVars(key, projectVars), { name: String(e.name || ''), info: String(e.info || ''), key, alarm });
   }
   tagNames = next;
+  applyAlarms();
 }
 
 // pls.bit05 -> ${pls}.bit05 når en prosjektvariabel angir enheten
@@ -470,17 +477,26 @@ function namesKey(tag) {
   return tag;
 }
 
-// changes: [{ tag, name, info }], taggen slik HMI-en viser den; tomt navn og tom beskrivelse
-// fjerner den. Alle eller ingen: den første ugyldige endringen kaster en feil før noe blir skrevet.
+// changes: [{ tag, name, info, alarm }], taggen slik HMI-en viser den. Et felt som ikke er med,
+// blir som det var; alarm: null fjerner din alarm, så adapterens gjelder igjen. Uten navn,
+// beskrivelse og alarm forsvinner oppføringen. Alle eller ingen: den første ugyldige endringen
+// kaster en feil før noe blir skrevet.
 function applyNameChanges(names, changes) {
   const str = (v, max) => String(v == null ? '' : v).trim().slice(0, max);
   for (const ch of changes) {
     const tag = ch ? String(ch.tag == null ? '' : ch.tag).trim() : '';
     if (!tag || tag.length > 200 || /\s/.test(tag) || RESERVED_KEY(tag)) throw new Error(`invalid tag name "${ch && ch.tag}"`);
     // én oppføring per tag: en annen nøkkel som betyr samme tag, fjernes
-    for (const k of Object.keys(names.tags)) if (resolveVars(k, projectVars) === tag) delete names.tags[k];
-    const name = str(ch.name, 80), info = str(ch.info, 2000);
-    if (name || info) names.tags[namesKey(tag)] = { name, info, updated: now() };
+    let prev = {};
+    for (const k of Object.keys(names.tags)) if (resolveVars(k, projectVars) === tag) { prev = names.tags[k] || {}; delete names.tags[k]; }
+    const name = own(ch, 'name') ? str(ch.name, 80) : str(prev.name, 80);
+    const info = own(ch, 'info') ? str(ch.info, 2000) : str(prev.info, 2000);
+    let alarm = own(ch, 'alarm') ? ch.alarm : prev.alarm;
+    if (alarm != null && isCalc(tag)) throw new Error(`${tag}: a calculation gets its alarm in Calculations, not here`);
+    alarm = ownAlarmIn(alarm);
+    const e = { name, info };
+    if (alarm) e.alarm = alarmStored(alarm);
+    if (name || info || alarm) names.tags[namesKey(tag)] = Object.assign(e, { updated: now() });
   }
 }
 
@@ -622,7 +638,9 @@ function thin(pts, from, to, n) {
 // ---------------------------------------------------------------- aktive alarmer
 // En alarm er en betingelse som er på eller av. Den kommer fra:
 //   tag    en tag som en adapter registrerte med  alarm: { severity, text, when, delay, codes }
-//          (tcplink-adapter: "event": "warning" eller "alarm" under "tags" i innstillingsfilen)
+//          (tcplink-adapter: "event": "warning" eller "alarm" under "tags" i innstillingsfilen),
+//          eller en tag du har gitt en alarm i Tag-list (tagnames.json). Din går foran adapterens,
+//          og severity "none" slår adapterens av.
 //   calc   en beregning der hendelsen er en advarsel eller en alarm
 //   link   en adapter som koblet fra, til den kobler til igjen
 //   event  en advarsel eller alarmhendelse uten betingelse bak: står i listen til den er kvittert
@@ -691,7 +709,7 @@ function trimAlarms() {
   for (const a of old.slice(0, alarms.size - ALARMS_MAX)) alarms.delete(a.key);
 }
 
-// alarmen en tag har, ut fra det adapteren dens registrerte
+// alarmen en adapter registrerte for en tag (deviceAlarm)
 function alarmDef(a) {
   if (!a || typeof a !== 'object' || !ALARM_SEVERITIES.includes(a.severity)) return null;
   return {
@@ -705,7 +723,8 @@ function alarmDef(a) {
 // "Drive fault F{value}" med kodens tekst fra kodelisten, hvis taggen angir en
 function alarmText(t, def) {
   const shown = typeof t.value === 'number' || typeof t.value === 'string' ? String(t.value) : '';
-  let text = (def.text || (t.dataType === 'boolean' ? t.name : `${t.name} = {value}`)).split('{value}').join(shown);
+  const n = tagNames.get(t.name), called = (n && n.name) || t.deviceLabel || t.name;
+  let text = (def.text || (t.dataType === 'boolean' ? called : `${called} = {value}`)).split('{value}').join(shown);
   if (def.codes && shown) {
     const l = readCodes().codes.lists[def.codes];
     const e = l && l.codes && own(l.codes, shown) ? l.codes[shown] : null;
@@ -713,6 +732,48 @@ function alarmText(t, def) {
     if (short) text += ': ' + short;
   }
   return text;
+}
+// din alarm for en tag, fra Tag-list (tagnames.json): null (ingen), { severity: 'none' } (slår
+// adapterens av), eller som alarmDef. Kaster en feil for noe som ikke kan brukes.
+function ownAlarmIn(a) {
+  if (a == null) return null;
+  if (typeof a !== 'object' || Array.isArray(a)) throw new Error('alarm must be an object or null');
+  if (a.severity === 'none') return { severity: 'none' };
+  if (!ALARM_SEVERITIES.includes(a.severity)) throw new Error(`alarm severity must be none, warning or alarm (not "${a.severity}")`);
+  if (a.when != null && !['true', 'false', true, false].includes(a.when)) throw new Error('alarm when must be "true" or "false"');
+  const delay = Number(a.delay || 0);
+  if (!(delay >= 0 && delay <= 3600000)) throw new Error('alarm delay must be 0 to 3600000 ms');
+  return alarmDef(a);
+}
+// slik den lagres i filen: bare det som ikke er standard
+function alarmStored(a) {
+  if (a.severity === 'none') return { severity: 'none' };
+  const out = { severity: a.severity };
+  if (a.text) out.text = a.text;
+  if (a.when === 'false') out.when = 'false';
+  if (a.delay) out.delay = a.delay;
+  if (a.codes) out.codes = a.codes;
+  return out;
+}
+// alarmen som gjelder for en tag: din fra Tag-list, ellers adapterens
+function effectiveAlarm(t) {
+  const n = tagNames.get(t.name), mine = n && n.alarm;
+  if (mine) return mine.severity === 'none' ? null : mine;
+  return t.deviceAlarm || null;
+}
+// etter at tagnames.json er lest: hver tag får alarmen som gjelder, og alarmlisten følger med
+function applyAlarms() {
+  let changed = false;
+  for (const t of tags.values()) {
+    if (t.source === 'calc') continue;   // en beregning har alarmen sin i hendelsen sin
+    const next = effectiveAlarm(t);
+    if (JSON.stringify(next) === JSON.stringify(t.alarm || null)) continue;
+    t.alarm = next;
+    changed = true;
+    if (!next) clearAlarm('tag:' + t.name, true);
+    else { const d = alarmDelays.get('tag:' + t.name); if (d) { clearTimeout(d); alarmDelays.delete('tag:' + t.name); } tagAlarm(t); }
+  }
+  if (changed) broadcastRegistry();
 }
 // alarmen til en tag følger verdien; en foreldet verdi lar den være som den er
 function tagAlarm(t, now_) {
@@ -785,8 +846,9 @@ function handle(c, msg) {
           value: prev.value,
           ts: prev.ts,
           quality: prev.value === undefined ? 'uncertain' : 'good',
-          alarm: alarmDef(def.alarm),
+          deviceAlarm: alarmDef(def.alarm),
         };
+        t.alarm = effectiveAlarm(t);   // din alarm fra Tag-list går foran adapterens
         tags.set(def.name, t);
         c.owns.add(def.name);
         if (!t.alarm) clearAlarm('tag:' + def.name, true);   // ikke lenger en alarm (layouten er endret)

@@ -198,7 +198,7 @@ erstattet sammen med kjernen.
 |---|---|---|
 | `hmi.json` | Prosjektet: skjermbilder, widgeter, koblinger til tagger, variabler, beregninger | I HMI-editoren (Save). Det går an å redigere for hånd, se [12.3](#123-prosjektfilen) |
 | `codes.json` | Tekster og beskrivelser for feil- og alarmkoder | *Code texts* i HMI-en, lagres med en gang, også fra Run-modus (se [Kodetekster](#kodetekster-feilkoder-og-alarmkoder)) |
-| `tagnames.json` | Dine egne navn og beskrivelser for tagger (`pls.bit05` = *Dør lukket*) | **✎ Name tags** i tagoversikten i HMI-en (**☰ Tag-list**), lagres med en gang (se [Tagnavn](#tagnavn-dine-egne-navn-på-tagger)) |
+| `tagnames.json` | Dine egne navn og beskrivelser for tagger (`pls.bit05` = *Dør lukket*), og hvilke tagger som gir alarm | Et klikk på en tag i **☰ Tag-list** i HMI-en, lagres med en gang (se [Tagnavn](#tagnavn-dine-egne-navn-på-tagger) og [Velge hvilke tagger som gir alarm](#velge-hvilke-tagger-som-gir-alarm)) |
 | `assets/*.svg` | Tegninger for Drawing-widgeter | Tegneprogrammet ditt; last opp i HMI-en |
 | `assets/*.js` | Three.js-kode for Animation-widgeter | Kodeeditoren i HMI-en, eller en hvilken som helst teksteditor |
 | `assets/*.glb`, `.gltf`, `.bin`, bilder | 3D-modeller og teksturer som animasjonene bruker | Kopier dem inn i mappen |
@@ -328,6 +328,8 @@ navn kan endres når som helst uten nedlasting til PLS-en.
 - **Prosjektvariabler:** med `pls=pls` lagres et navn for `pls.bit05` som
   `${pls}.bit05`, så det følger variabelen: med `pls=pls2` får `pls2.bit05` det samme navnet.
 - **Tomt navn og tom beskrivelse** fjerner navnet.
+- **Alarmen** settes i det samme vinduet, i Edit-modus; se
+  [Velge hvilke tagger som gir alarm](#velge-hvilke-tagger-som-gir-alarm).
 
 **Navn fra PLS-en.** Med TcpLink-blokken ligger navnene i PLS-en (`LinkNames`), og
 `tcplink-adapter.js` gir hver tag navnet den har der, med enheten fra en `[...]` til slutt
@@ -344,8 +346,10 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
 ```json
 {
   "tags": {
-    "${pls}.bit05": { "name": "Dør lukket", "info": "Endebryter B12, venstre dør", "updated": 1790630666358 },
-    "${pls}.reals_0": { "name": "Motorturtall", "info": "rpm, fra drivet" }
+    "${pls}.bit05": { "name": "Dør lukket", "info": "Endebryter B12, venstre dør", "updated": 1790630666358,
+                      "alarm": { "severity": "alarm", "text": "Door open", "when": "false", "delay": 2000 } },
+    "${pls}.reals_0": { "name": "Motorturtall", "info": "rpm, fra drivet" },
+    "${pls}.words_1": { "name": "", "info": "", "alarm": { "severity": "none" } }
   }
 }
 ```
@@ -531,6 +535,7 @@ har en ⓘ som åpner beskrivelsen av koden.
 
 | Kilde | Aktiv så lenge | Eksempel |
 |---|---|---|
+| En tag du har gjort til en alarm i **☰ Tag-list** | betingelsen du valgte: på eller av, 0 eller ikke 0 | *kv_52 Door open* `pls.bit05` |
 | En plass i innstillingsfilen med `"event": "alarm"` eller `"warning"` | verdien ikke er 0 | `pls.words_0` (Feilkode) og `pls.words_1` (Varselkode) i `kjoreverk-options.json` |
 | En beregning med en *Warning*- eller *Alarm*-hendelse | resultatet er sant | `calc.kv_crash` |
 | En adapter som har koblet fra | til den kobler til igjen | *kv_52: Adapter disconnected* |
@@ -540,6 +545,32 @@ Alarmene følger verdier, ikke meldinger. En alarm som allerede er på når hube
 eller PLS-en starter, vises med en gang, og etter en omstart bygger listen seg opp igjen fra
 verdiene slik de er. Kvitteringer ligger bare i minnet til huben, så etter
 en omstart av huben må aktive alarmer kvitteres på nytt.
+
+### Velge hvilke tagger som gir alarm
+
+I Edit-modus åpner **☰ Tag-list** alle taggene. **⚠ alarm** og **⚠ warning** bak en tag viser
+at den kommer i alarmlisten, og filteret *Alarms and warnings* viser bare dem. Et klikk på en
+tag åpner navnet, beskrivelsen og alarmen dens:
+
+| Felt | Hva |
+|---|---|
+| **Alarm list** | *No alarm*, *Warning* eller *Alarm*. Har adapteren en alarm på taggen (fra innstillingsfilen), står den som *As the adapter: …*, og *No alarm* slår den av |
+| **Active** | *When it is on* eller *When it is off* for en bit, *When it is not 0* eller *When it is 0* for et tall |
+| **Text in the alarm list** | `{value}` blir verdien: *Drive fault F{value}*. Tom: taggens navn |
+| **Delay (s)** | Hvor lenge den må stå før den kommer, så et kort blink ikke gir en alarm |
+| **Code list** | For et tall: legger kodens tekst fra [Kodetekster](#kodetekster-feilkoder-og-alarmkoder) til i alarmen |
+
+- **Save** lagrer med en gang, uten Save av prosjektet, og alarmlisten følger med: er
+  betingelsen oppfylt nå, kommer alarmen med en gang.
+- **Det du velger her, går foran innstillingsfilen.** `"event"` i `kjoreverk-options.json`
+  er standarden; velg *As the adapter* for å bruke den igjen.
+- **Lagres i `tagnames.json`**, sammen med navnene, med `${pls}` i taggen. Filen følger med
+  `hmi-core/config/` når prosjektet kopieres til de andre kjøreverkene.
+- **En beregning** får alarmen sin i **ƒ Calculations**, som en *Warning*- eller
+  *Alarm*-hendelse.
+- **Bare i Edit-modus:** Tag-list finnes ikke i Run-modus, så alarmene endres der prosjektet
+  ellers endres, bak koden til Edit hvis prosjektet har en. Koden er ikke et vern mot noen som
+  vil (se [Sikkerhet](#13-sikkerhet)).
 
 ### Kodetekster (feilkoder og alarmkoder)
 
@@ -1336,7 +1367,7 @@ Alt går på hubens port:
 | `GET /api/codes` | Kodetekstene (`codes.json`) |
 | `POST /api/codes` | Endre kodetekster: `{"changes":[...]}`, alle eller ingen. En endring er `{"list":"v90-faults","set":{"name","prefix"}}` (en liste), `{"list","code":"7900","set":{"text","info"}}` (en kode; begge tomme fjerner den), eller en av dem med `"remove":true` |
 | `GET /api/names` | Dine tagnavn (`tagnames.json`), og `byTag`: navnet på hver tag med variablene fylt inn |
-| `POST /api/names` | Endre tagnavn: `{"changes":[{"tag":"pls.bit05","name":"Dør lukket","info":"..."}]}`, alle eller ingen. Tomt navn og tom info fjerner navnet. Lagres med prosjektvariabelen når en variabel navngir enheten (`${pls}.bit05`) |
+| `POST /api/names` | Endre tagnavn og alarmer: `{"changes":[{"tag":"pls.bit05","name":"Dør lukket","info":"...","alarm":{"severity":"alarm","when":"false","text":"Door open","delay":2000,"codes":null}}]}`, alle eller ingen. Et felt som ikke er med, blir som det var. `"alarm": null` fjerner din alarm (adapterens gjelder igjen), `{"severity":"none"}` slår adapterens av. Uten navn, info og alarm forsvinner oppføringen. Lagres med prosjektvariabelen når en variabel navngir enheten (`${pls}.bit05`) |
 | `GET /api/tags` | Taglisten med gjeldende verdier, navnet som vises (`label`: ditt eget, `ownLabel`, ellers adapterens, `deviceLabel`) og din beskrivelse (`info`) for hver tag |
 | `GET /api/events` | Nylige hendelser |
 | `GET /api/alarms` | Alarmlisten: aktive, og ikke kvittert ennå |
@@ -1503,7 +1534,8 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | Et signal mangler i tidslinjen | En gruppe som `pls.*` tar bare med av/på-tagger: skriv navnet på et tall alene. Over 128 signaler vises de første; gjør listen kortere, eller ta noen ut med `!` |
 | Trendene får ikke tilbake det PLS-en har logget | Adapterloggen sier `PLC history: ...` ved hver tilkobling. Står det `empty`, logger PLS-en ingenting: sjekk `histMask`, og at `histNewest` øker når et signal endres. Sier loggen `Message from the PLC not understood`, er `tcplink-adapter.js` eldre enn PLS-blokken. Er historikken borte etter et strømbrudd på PLS-en, er ikke `LinkHistory` retentiv |
 | Et betjeningselement er grået ut | *Enabled when*-betingelsen er ikke oppfylt (hold musepekeren over for å se hvilken), eller enheten er frakoblet (etiketten sier *stale*) |
-| En alarm kommer tilbake hvert sekund | Verdien ligger og vipper ved grensen. Gi den hysterese i PLS-en, eller en `delay` i alarmen |
+| En alarm kommer tilbake hvert sekund | Verdien ligger og vipper ved grensen. Gi den hysterese i PLS-en, eller en *Delay* i alarmen (**☰ Tag-list**) |
+| En tag du har gjort til en alarm, gir ingen alarm | Sjekk *Active* (på eller av), og at taggen har en verdi: en foreldet verdi (*stale*) endrer ikke alarmen. Hubens logg sier `[names] WARNING` hvis `tagnames.json` er redigert for hånd og alarmen ikke kan brukes |
 | En alarm blir stående i listen | Den venter på kvittering, eller den er fortsatt aktiv. Bare alarmer som er både borte *og* kvittert, forsvinner fra listen |
 | En annen nettleser viser den gamle layouten | Last siden inn på nytt etter lagring |
 | `EADDRINUSE` når huben startes | Porten er opptatt av en annen hub. Velg en annen: `node hub.js 8081 ...` |

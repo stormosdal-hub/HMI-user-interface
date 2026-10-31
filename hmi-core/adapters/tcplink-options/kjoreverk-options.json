@@ -5,6 +5,7 @@
     "Taggene er plassene: bit00..bit31, words_0, times_0, ints_0, dints_0, reals_0, og cmd_bit00, cmd_words_0, cmd_ints_0, cmd_dints_0, cmd_reals_0 tilbake. Indeksen er den samme som i LinkDB og LinkNames.",
     "Tilordningen under følger LinkNames.db og TCP_LINK.md avsnitt 9: words_0 = Feilkode, words_1 = Varselkode, words_2 = Statusord (ZSW1), rx.bits[5] og [6] = Jogg forover og Jogg bakover. Flytter du dem i PLS-en, flytt dem her også.",
     "\"tags\" for en plass fra PLS-en: event (info, warning, alarm), text ({value} blir verdien), codes (en kodeliste i codes.json, som gir alarmteksten kodens tekst), delay (ms alarmen må stå før den vises), bits (navn på enkeltbits i et word, en int eller en dint), description.",
+    "Alarmene her er standarden. I HMI-en (Edit, Tag-list, klikk på en tag) kan en tag gjøres til alarm eller advarsel, eller en alarm herfra slås av; det går foran og lagres i config/tagnames.json.",
     "\"tags\" for en kommando: hold (ms; hold-for-å-kjøre, gi HMI-knappen \"Repeat while held\" = 200 ms) eller autoReset (ms; biten slår seg av selv), description.",
     "Bitene i Statusord følger ZSW1 for standardtelegram 1, 2, 3 og 5 (V90-bruksanvisningen, avsnitt 8.4.1). Andre telegrammer bruker bit 11..15 annerledes.",
     "connect er adressen til PLS-en; --plc=<ip>:<port> på kommandolinjen overstyrer den. PLS-en tar imot én klient per TcpLink-instans: stopp andre klienter på samme port først."

@@ -454,18 +454,27 @@
       pick,
       title,
       editName: changeName,
+      alarms: true,   // tagoversikten åpnes bare i Edit-modus
+      codeLists: () => H.codes.lists(),
     });
   }
-  // ditt eget navn og din beskrivelse for en tag: huben har dem (tagnames.json ved siden av prosjektet),
-  // ikke i prosjektfilen, så det verken trenger eller gir en Save. Alle HMI-er får det med en gang.
-  async function changeName(tag, name, info) {
+  // ditt eget navn, din beskrivelse og alarmen for en tag: huben har dem (tagnames.json ved siden av
+  // prosjektet), ikke i prosjektfilen, så det verken trenger eller gir en Save. Alle HMI-er og
+  // alarmlisten får det med en gang. alarm: undefined = uendret, null = adapterens gjelder.
+  async function changeName(tag, name, info, alarm) {
     let r, res = {};
+    const change = alarm === undefined ? { tag, name, info } : { tag, name, info, alarm };
     try {
-      r = await fetch('/api/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ changes: [{ tag, name, info }] }) });
+      r = await fetch('/api/names', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ changes: [change] }) });
       res = await r.json();
     } catch (e) { throw new Error(r ? e.message : 'the hub can’t be reached'); }
     if (!r.ok || !res.ok) throw new Error(res.error || r.statusText);
     const t = state.tags.get(tag), dev = t && t.deviceLabel;
+    if (alarm !== undefined) {
+      const sev = alarm ? (alarm.severity === 'none' ? null : alarm.severity) : (t && t.deviceAlarm ? t.deviceAlarm.severity : null);
+      const word = sev === 'alarm' ? 'an alarm' : sev === 'warning' ? 'a warning' : 'no alarm';
+      return toast(`${tag}${name ? ` (“${name}”)` : ''} saved: ${word}${alarm === null && sev ? ', as the adapter sets it' : ''}`);
+    }
     toast(name ? `${tag} is “${name}” now` : dev ? `${tag} has the device's name again: “${dev}”` : `${tag} has no name of its own now`);
   }
   // en tag valgt for en widget som fortsatt har standardetiketten: taggens eget navn, hvis den har et
