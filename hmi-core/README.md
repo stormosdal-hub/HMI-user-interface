@@ -74,7 +74,7 @@ Bytt mellom **Edit** og **Run** øverst til høyre.
 **Prosjektet huben starter med** er `config/hmi.json`: skjermbildene dine, variablene, og
 beregningene for PLS-en (hastighet i rpm, moment, effekt og kontrollene i
 [7](#betingelser-og-kontroller-over-tid)). De leser TcpLink-taggene: `calc.kv_speed_rpm` er
-`pls.reals_0` og `calc.kv_torque_nm` er `pls.reals_1`, allerede i rpm og Nm. De andre
+`pls.reals_0` (rpm) og `calc.moment_Nm` er `pls.ints_2 / 1000` (Nm). De andre
 beregningene bruker disse to, så flytter PLS-en hastigheten eller momentet til en annen plass,
 endrer du bare de to formlene. Før du legger en knapp på en kommandobit
 (`pls.cmd_bit03`), sjekk hva biten gjør i PLS-programmet, og gi en jog-bit `"hold"` i
@@ -169,7 +169,8 @@ gjenbrukbar.
     docs/            dokumentasjonen og diagrammene
 ```
 
-Alt du starter med `node`, ligger altså øverst i `hmi-core` eller i `adapters/`.
+Alt du starter med `node`, ligger altså øverst i `hmi-core` eller i `adapters/`. Hele bildet på
+Pi-en, også oppsettet `install.sh` skriver i `/etc`, står i [docs/pi-files.svg](docs/pi-files.svg).
 
 ### Kjerne — den samme i alle prosjekter, ikke endre den for et prosjekt
 
@@ -197,7 +198,7 @@ erstattet sammen med kjernen.
 |---|---|---|
 | `hmi.json` | Prosjektet: skjermbilder, widgeter, koblinger til tagger, variabler, beregninger | I HMI-editoren (Save). Det går an å redigere for hånd, se [12.3](#123-prosjektfilen) |
 | `codes.json` | Tekster og beskrivelser for feil- og alarmkoder | *Code texts* i HMI-en, lagres med en gang, også fra Run-modus (se [Kodetekster](#kodetekster-feilkoder-og-alarmkoder)) |
-| `tagnames.json` | Dine egne navn og beskrivelser for tagger (`pls.bit05` = *Dør lukket*) | **✎ Name tags** i tagoversikten i HMI-en (**☰ Data-list**), lagres med en gang (se [Tagnavn](#tagnavn-dine-egne-navn-på-tagger)) |
+| `tagnames.json` | Dine egne navn og beskrivelser for tagger (`pls.bit05` = *Dør lukket*) | **✎ Name tags** i tagoversikten i HMI-en (**☰ Tag-list**), lagres med en gang (se [Tagnavn](#tagnavn-dine-egne-navn-på-tagger)) |
 | `assets/*.svg` | Tegninger for Drawing-widgeter | Tegneprogrammet ditt; last opp i HMI-en |
 | `assets/*.js` | Three.js-kode for Animation-widgeter | Kodeeditoren i HMI-en, eller en hvilken som helst teksteditor |
 | `assets/*.glb`, `.gltf`, `.bin`, bilder | 3D-modeller og teksturer som animasjonene bruker | Kopier dem inn i mappen |
@@ -252,9 +253,9 @@ På Windows virker det samme med omvendt skråstrek:
 - **Flere kjøreverk med samme PLS-program:** alle bruker det samme prosjektet og de samme
   tagnavnene (`pls.*`). Det som skiller dem, er kjøreverkets navn (`kv_52`) i
   `/etc/kjoreverk/vehicle` på hver Pi (se [Kjøreverkets navn](#kjøreverkets-navn)).
-- **To PLS-er på samme hub:** gi den andre et eget prefiks (`"device": "pls2"`). Med
-  prosjektvariabelen `kv` (`kv=pls` eller `kv=pls2`) kan de samme skjermbildene vise begge (se
-  [Variabler](#4-begreper)).
+- **To PLS-er på samme hub:** gi den andre et eget prefiks (`"device": "pls2"`), og skriv
+  taggene dens som `pls2.bit00`. Eller la skjermbildene bruke prosjektvariabelen (`${pls}.bit00`),
+  og bytt verdien mellom `pls=pls` og `pls=pls2` (se [Variabler](#4-begreper)).
 - **To prosjekter samtidig:** kjør to huber på forskjellige porter.
 
 ---
@@ -287,10 +288,17 @@ huben tilbake fra adapteren (se [Historikken fra PLS-en](#historikken-fra-pls-en
 **Beregnet tag.** En tag med navnet `calc.<name>` som huben regner ut fra andre tagger med
 en formel. Se [7](#7-beregnede-verdier).
 
-**Variabler.** Teksterstatninger for hele prosjektet: `kv=pls` lar widgeter bruke
-`${kv}.reals_0`. Endre variabelen, så følger alle widgeter, koblinger, innganger og formler
-med. Slik kan ett skjermbildeoppsett betjene flere enheter med samme PLS-program. Variablene
-lager ingen tagger: `kv` må være det samme som tagprefikset adapteren bruker (`"device"`).
+**Variabler.** Teksterstatninger for hele prosjektet: `pls=pls` under **Variables** lar widgeter
+bruke `${pls}.reals_0`, som blir `pls.reals_0`. Endre verdien, så følger alle widgeter,
+koblinger, innganger og formler med. Slik kan ett skjermbildeoppsett betjene flere enheter med
+samme PLS-program. Variablene lager ingen tagger: verdien må være det samme som tagprefikset
+adapteren bruker (`"device"`).
+
+- **Krøllparenteser:** `${pls}` (AltGr+7 og AltGr+0 på et norsk tastatur), ikke `$(pls)`.
+- **Uten variabel** virker det like godt å skrive taggen slik tagoversikten viser den:
+  `pls.reals_0`.
+- **Navnet foran `=`** er det du skriver mellom krøllparentesene. Med `kv=pls` heter det
+  `${pls}.reals_0`.
 
 **Hendelser.** Tekstmeldinger med en alvorlighetsgrad (`info`, `warning`, `alarm`) som
 adaptere sender, eller som huben sender når adaptere kobler til og fra. Vises av
@@ -309,7 +317,7 @@ og din egen **beskrivelse**, f.eks. `pls.bit05` = *Dør lukket*, *endebryter B12
 Taggen beholder navnet sitt. Skjermbilder, beregninger og historikk forblir som de er, og et
 navn kan endres når som helst uten nedlasting til PLS-en.
 
-- **Sette dem:** **✎ Name tags** i tagoversikten i HMI-en (Edit-modus, **☰ Data-list** i
+- **Sette dem:** **✎ Name tags** i tagoversikten i HMI-en (Edit-modus, **☰ Tag-list** i
   topplinjen). Et klikk på en tag åpner navnet og beskrivelsen dens. Det lagres med en gang,
   uten Save av prosjektet, og hver HMI får endringen med en gang.
 - **Hvor de vises:**
@@ -317,8 +325,8 @@ navn kan endres når som helst uten nedlasting til PLS-en.
   - etiketten til en widget, når du velger en navngitt tag for en widget som fortsatt har
     standardetiketten sin.
 - **Hvor de lagres:** huben har dem i `tagnames.json`, ved siden av prosjektfilen.
-- **Prosjektvariabler:** med `kv = pls` lagres et navn for `pls.bit05` som
-  `${kv}.bit05`, så en annen enhet (`kv = pls2`) får de samme navnene for sine egne tagger.
+- **Prosjektvariabler:** med `pls=pls` lagres et navn for `pls.bit05` som
+  `${pls}.bit05`, så det følger variabelen: med `pls=pls2` får `pls2.bit05` det samme navnet.
 - **Tomt navn og tom beskrivelse** fjerner navnet.
 
 **Navn fra PLS-en.** Med TcpLink-blokken ligger navnene i PLS-en (`LinkNames`), og
@@ -336,8 +344,8 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
 ```json
 {
   "tags": {
-    "${kv}.bit05": { "name": "Dør lukket", "info": "Endebryter B12, venstre dør", "updated": 1790630666358 },
-    "${kv}.reals_0": { "name": "Motorturtall", "info": "rpm, fra drivet" }
+    "${pls}.bit05": { "name": "Dør lukket", "info": "Endebryter B12, venstre dør", "updated": 1790630666358 },
+    "${pls}.reals_0": { "name": "Motorturtall", "info": "rpm, fra drivet" }
   }
 }
 ```
@@ -379,9 +387,10 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
   huben. Hver tag viser live-verdi, måleenhet, datatype og siste oppdatering, og tagger som er foreldet
   eller uten verdi, er merket, så du ser med en gang om en enhet virkelig sender. Søk, filtrer
   (enheter, beregnede, live, foreldede) og klikk på en tag for å bruke den. Når en
-  prosjektvariabel navngir enheten, settes taggen inn som `${kv}.reals_0`, så widgeten fortsetter
-  å følge variabelen. For trender legges den valgte taggen til i listen.
-- **☰ Data-list** i topplinjen (Edit-modus) åpner det samme vinduet bare for å se: alle
+  prosjektvariabel navngir enheten, settes taggen inn som `${pls}.reals_0`, så widgeten fortsetter
+  å følge variabelen. Uten haken i *Insert with project variables* settes `pls.reals_0` inn.
+  For trender legges den valgte taggen til i listen.
+- **☰ Tag-list** i topplinjen (Edit-modus) åpner det samme vinduet bare for å se: alle
   taggene på huben med navn, live-verdi, måleenhet, datatype og alder. *Browse tags with live
   values* i prosjektpanelet gjør det samme.
 - **Tagfelt** foreslår taggene huben kjenner. Taggene trenger ikke finnes ennå: en widget
@@ -468,10 +477,10 @@ hører hjemme:
 
 - **Enabled when:** en tag og en betingelse (`true`, `false`, `=3`, `!=0`, `>50`, `10..20`).
   Så lenge betingelsen ikke er oppfylt, er betjeningselementet grått og kan ikke brukes. Holder
-  du musen over det, står det hvorfor. For eksempel Jog bare uten feil: tag `${kv}.bit02`,
+  du musen over det, står det hvorfor. For eksempel Jog bare uten feil: tag `${pls}.bit02`,
   betingelse `false`.
   - **Flere betingelser:** lag en boolsk [beregning](#7-beregnede-verdier), som
-    `calc.jog_allowed = ${kv}.link && !${kv}.bit02`, og bruk den som tag.
+    `calc.jog_allowed = ${pls}.link && !${pls}.bit02`, og bruk den som tag.
   - **Ved tvil, ikke aktivert:** en tag som er foreldet eller ikke har noen verdi ennå,
     regnes som ikke aktivert.
   - **Hold-for-å-kjøre:** en Jog-knapp som holdes inne, slippes i det øyeblikket betingelsen
@@ -679,7 +688,7 @@ For verdier enhetene ikke regner ut selv: effekt fra dreiemoment og turtall, vir
 summer, betingelser. Åpne **ƒ Calculations** i topplinjen (Edit-modus).
 
 ```
-calc.motor_power  [kW]  =  ${mono}.torque * ${mono}.speed * 2 * pi / 60 / 1000
+calc.kv_power_w  [W]  =  ${pls}.reals_1 * ${pls}.reals_0 * 2 * pi / 60
 ```
 
 - **Huben regner dem ut**, så alle HMI-er viser det samme resultatet, trender har historikk,
@@ -695,14 +704,14 @@ calc.motor_power  [kW]  =  ${mono}.torque * ${mono}.speed * 2 * pi / 60 / 1000
 
 | | |
 |---|---|
-| Tagger | `pls.reals_0` `${kv}.reals_0` `calc.kv_power_w` `[odd-name.with-dashes]` |
+| Tagger | `pls.reals_0` `${pls}.reals_0` `calc.kv_power_w` `[odd-name.with-dashes]` |
 | Operatorer | `+ - * / % ^`  `== != < <= > >=`  `&&` `\|\|` `!`  `cond ? a : b` |
 | Funksjoner | `abs sqrt pow exp log log10 sin cos tan asin acos atan atan2 floor ceil round(x, digits) sign min max avg sum hypot clamp(x, lo, hi) if(cond, a, b)` |
 | Konstanter | `pi e true false`. Boolske verdier teller som 1 og 0; vinkler er i radianer |
 | Betingelser | `a && b && !c` (alle), `a \|\| b` (minst én), `count(a, b, c) >= 2` (minst to sanne), `between(x, lo, hi)` |
 | Over tid | `changes(x, s)`, `rate(x, s)`, `delta(x, s)`, `held(cond, s)`, `stretch(cond, s)`, `avgOver(x, s)`, `minOver(x, s)`, `maxOver(x, s)` |
 
-- **Typer:** velg *boolean* for betingelser (`calc.drive_ready`), *number* for alt annet.
+- **Typer:** velg *boolean* for betingelser (`calc.kv_cruising`), *number* for alt annet.
 - **Rekkefølge:** huben finner rekkefølgen når beregninger bruker hverandre, og melder fra om
   sirkulære referanser.
 **Den fullstendige referansen** for å skrive beregninger er
@@ -716,7 +725,7 @@ En *boolean*-beregning er en betingelse, for eksempel "kjører i fart med sensor
 sensor 2 av":
 
 ```
-${kv}.reals_0 > 900 && ${kv}.bit01 && ${kv}.bit03 && !${kv}.bit02
+${pls}.reals_0 > 900 && ${pls}.bit01 && ${pls}.bit03 && !${pls}.bit02
 ```
 
 Bruk `if(condition, value, otherValue)` når du heller vil ha et tall ut.
@@ -726,12 +735,12 @@ antall sekunder, 0.05 til 3600.
 
 | Funksjon | Svarer på | Eksempel |
 |---|---|---|
-| `changes(x, s)` | Hvor mange ganger x endret seg de siste s sekundene | Flimring, løs kabel: `changes(${kv}.bit06, 2) >= 6` |
+| `changes(x, s)` | Hvor mange ganger x endret seg de siste s sekundene | Flimring, løs kabel: `changes(${pls}.bit06, 2) >= 6` |
 | `rate(x, s)` | Hvor fort x endrer seg, per sekund | Kollisjon: `abs(rate(calc.kv_speed_rpm, 0.3)) > 4000` |
-| `delta(x, s)` | Hvor mye x endret seg de siste s sekundene | `delta(${kv}.dints_0, 60)` = strekning det siste minuttet |
+| `delta(x, s)` | Hvor mye x endret seg de siste s sekundene | `delta(${pls}.dints_0, 60)` = strekning det siste minuttet |
 | `held(cond, s)` | Sann når cond har vært sann i s sekunder uten avbrudd | `held(speed > 1000 && ok, 3)` |
 | `stretch(cond, s)` | Sann mens cond er sann og i s sekunder etterpå | Holder en kort kollisjon synlig: `stretch(calc.kv_crash, 10)` |
-| `avgOver`, `minOver`, `maxOver(x, s)` | Gjennomsnitt (tidsvektet), laveste, høyeste | `avgOver(${kv}.ints_1, 60)` |
+| `avgOver`, `minOver`, `maxOver(x, s)` | Gjennomsnitt (tidsvektet), laveste, høyeste | `avgOver(${pls}.ints_1, 60)` |
 
 Slik oppfører de seg:
 - **Hver endring teller.** Når inngangen er en tag, mater huben hver endring inn i funksjonen
@@ -935,7 +944,7 @@ rad er én del, én tag og én handling. Handlingen bestemmer retningen:
 overstyrer en tidligere. Passer ingenting, beholder delen tegningens egen farge.
 
 **Toveis deler får to rader.** For eksempel får en av/på-knapp *Toggle on click* på
-`${mono}.power` pluss *Colour by state* på samme tag. Fargen viser da hva enheten meldte
+`${pls}.cmd_bit00` pluss *Colour by state* på samme tag. Fargen viser da hva enheten meldte
 tilbake, ikke hva som ble klikket. Betjeningshandlinger virker bare i Run-modus.
 
 ### Spole tilbake i tid
@@ -1130,7 +1139,7 @@ For hånd er det `echo kv_52 | sudo tee /etc/kjoreverk/vehicle`.
 - **Overstyre for én kjøring:** `--name=kv_52` på `tcplink-adapter.js`, `--vehicle kv_52` på
   recorderen.
 - **Tagprefikset** (`"device": "pls"` i innstillingsfilen) er det samme i alle kjøreverkene, og
-  prosjektvariabelen `kv` er det samme: `kv=pls`.
+  prosjektvariabelen er det samme: `pls=pls`.
 - Tjenestene leser filen når de starter. `install.sh` starter dem på nytt selv; endrer du filen
   for hånd, kjør `sudo systemctl restart 'kjoreverk@*'`.
 
@@ -1327,7 +1336,7 @@ Alt går på hubens port:
 | `GET /api/codes` | Kodetekstene (`codes.json`) |
 | `POST /api/codes` | Endre kodetekster: `{"changes":[...]}`, alle eller ingen. En endring er `{"list":"v90-faults","set":{"name","prefix"}}` (en liste), `{"list","code":"7900","set":{"text","info"}}` (en kode; begge tomme fjerner den), eller en av dem med `"remove":true` |
 | `GET /api/names` | Dine tagnavn (`tagnames.json`), og `byTag`: navnet på hver tag med variablene fylt inn |
-| `POST /api/names` | Endre tagnavn: `{"changes":[{"tag":"pls.bit05","name":"Dør lukket","info":"..."}]}`, alle eller ingen. Tomt navn og tom info fjerner navnet. Lagres med prosjektvariabelen når en variabel navngir enheten (`${kv}.bit05`) |
+| `POST /api/names` | Endre tagnavn: `{"changes":[{"tag":"pls.bit05","name":"Dør lukket","info":"..."}]}`, alle eller ingen. Tomt navn og tom info fjerner navnet. Lagres med prosjektvariabelen når en variabel navngir enheten (`${pls}.bit05`) |
 | `GET /api/tags` | Taglisten med gjeldende verdier, navnet som vises (`label`: ditt eget, `ownLabel`, ellers adapterens, `deviceLabel`) og din beskrivelse (`info`) for hver tag |
 | `GET /api/events` | Nylige hendelser |
 | `GET /api/alarms` | Alarmlisten: aktive, og ikke kvittert ennå |
@@ -1348,7 +1357,7 @@ Navn på assets kan bruke bokstaver, sifre, `_`, `.` og `-`, med filtypene `.svg
   "project": "Kjoreverk",
   "canvas": { "width": 1280, "height": 720 },
   "hub": { "url": "" },
-  "vars": { "kv": "pls" },
+  "vars": { "pls": "pls" },
   "screens": [
     { "id": "main", "name": "Main", "widgets": [
       { "id": "gauge-speed", "type": "gauge", "x": 20, "y": 20, "w": 220, "h": 190,
@@ -1357,7 +1366,7 @@ Navn på assets kan bruke bokstaver, sifre, `_`, `.` og `-`, med filtypene `.svg
     ] }
   ],
   "calcs": [
-    { "name": "kv_speed_rpm", "formula": "${kv}.reals_0", "unit": "rpm", "decimals": 0, "type": "number" }
+    { "name": "kv_speed_rpm", "formula": "${pls}.reals_0", "unit": "rpm", "decimals": 0, "type": "number" }
   ]
 }
 ```
@@ -1376,7 +1385,7 @@ fra øvre venstre hjørne av kortets innholdsflate:
 { "id": "card-drive", "type": "card", "x": 20, "y": 80, "w": 620, "h": 450,
   "props": { "title": "Drive power", "tabs": [{ "id": "ov", "name": "Overview" }, { "id": "log", "name": "Log" }] } },
 { "id": "cd-power", "type": "gauge", "parent": "card-drive", "tab": "ov", "x": 20, "y": 20, "w": 290, "h": 370,
-  "props": { "label": "Shaft power", "tag": "calc.motor_power" } }
+  "props": { "label": "Shaft power", "tag": "calc.kv_power_w" } }
 ```
 
 En `parent` eller `tab` som ikke finnes, legger widgeten på lerretet eller på kortets første
@@ -1471,7 +1480,7 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | Symptom | Sannsynlig årsak |
 |---|---|
 | En widget viser `—` | Ingen verdi ennå, eller tagnavnet er feilstavet. Sammenlign med *Tags from devices* i prosjektpanelet; navnet må stemme nøyaktig |
-| Widgetene viser `—` etter at tagprefikset ble endret (fra `kv_1` til `pls`) | Variabelen `kv` må være det samme som prefikset: `kv=pls` under **Variables**. Tagger skrevet ut uten `${kv}` må endres for hånd: `grep -n kv_1 config/hmi.json config/tagnames.json` viser dem |
+| Widgetene viser `—` etter at en variabel fikk nytt navn, eller `${pls}.bit00` virker ikke | Variabelen må finnes under **Variables** med tagprefikset som verdi: `pls=pls`. Et eldre prosjekt har `kv=pls` og `${pls}` i widgetene; `grep -n '\${pls}' config/hmi.json config/tagnames.json` viser hvor. Krøllparenteser, ikke vanlige: `${pls}`. Eller skriv taggen ut: `pls.bit00` |
 | Alarmlisten sier `pls` eller `calc.…` som kilde, ikke kjøreverkets navn | `/etc/kjoreverk/vehicle` mangler, eller navnet i den kan ikke brukes (tjenestens logg sier hvorfor). Tjenestene leser filen når de starter: `sudo systemctl restart 'kjoreverk@*'` |
 | En widget er grå og sier *stale* | Adapteren som eier taggen, er koblet fra, eller en inngang til en beregning er foreldet |
 | Et betjeningselement gjør ingenting | Adapteren sendte ikke ekko på skrivingen, taggen er ikke skrivbar, eller adapteren er frakoblet. Hubens logg viser `[write]`-linjer |

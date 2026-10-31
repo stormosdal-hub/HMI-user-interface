@@ -9,11 +9,11 @@
  *   {
  *     "events": true, "eventsMin": "info",
  *     "rules": [
- *       { "tags": "${kv}.spare*", "mode": "ignore" },
- *       { "tags": "${kv}.reals_0, ${kv}.reals_1", "deadband": "1%", "minInterval": 1, "maxInterval": 60 },
- *       { "tags": "${kv}.words_2", "ignoreBits": "8, 10" },
- *       { "tags": "${kv}.ints_1", "mode": "interval", "every": 60 },
- *       { "tags": "${kv}.bit0*", "flickerChanges": 6, "flickerSeconds": 2 }
+ *       { "tags": "${pls}.spare*", "mode": "ignore" },
+ *       { "tags": "${pls}.reals_0, ${pls}.reals_1", "deadband": "1%", "minInterval": 1, "maxInterval": 60 },
+ *       { "tags": "${pls}.words_2", "ignoreBits": "8, 10" },
+ *       { "tags": "${pls}.ints_1", "mode": "interval", "every": 60 },
+ *       { "tags": "${pls}.bit0*", "flickerChanges": 6, "flickerSeconds": 2 }
  *     ],
  *     "pauses": [ { "id": "k3f9a", "tags": "*", "since": 1793260000000, "until": 1793263600000, "reason": "maintenance" } ]
  *   }
@@ -49,7 +49,7 @@
  * Kjører på Node 10, som huben.
  */
 
-// "${kv}.bit0*, calc.*" -> [RegExp]; * passer med hva som helst, også punktum
+// "${pls}.bit0*, calc.*" -> [RegExp]; * passer med hva som helst, også punktum
 function compilePatterns(text, vars) {
   return String(text || '')
     .replace(/\$\{(\w+)\}/g, (m, k) => (vars && vars[k] != null ? String(vars[k]) : m))

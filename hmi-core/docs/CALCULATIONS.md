@@ -42,9 +42,9 @@ database kan lagre dem som en hvilken som helst annen tag.
 Tre typiske beregninger:
 
 ```
-calc.kv_speed_rpm     number    ${kv}.reals_0
-calc.kv_power_w       number    calc.kv_torque_nm * calc.kv_speed_rpm * 2 * pi / 60
-calc.kv_cable_fault   boolean   changes(${kv}.bit06, 2) >= 6     event: warning "Sensor bit06 is flickering: loose cable?"
+calc.kv_speed_rpm     number    ${pls}.reals_0
+calc.kv_power_w       number    calc.moment_Nm * calc.kv_speed_rpm * 2 * pi / 60
+calc.kv_cable_fault   boolean   changes(${pls}.bit06, 2) >= 6     event: warning "Sensor bit06 is flickering: loose cable?"
 ```
 
 ---
@@ -60,7 +60,7 @@ Hver beregning er et kort med disse feltene:
 | **Måleenhet** | Vises sammen med taggen, for eksempel i tagoversikten. Widgeter bruker sin egen innstilling for måleenhet. |
 | **Desimaler** | Hvor mange desimaler forhåndsvisningen i editoren viser. Widgeter har sin egen innstilling. |
 | **Formel** | Det som skal regnes ut. |
-| **Insert tag…** | Setter inn en tag ved markøren. Hvis en prosjektvariabel peker på enheten, settes den inn som `${kv}.reals_0`, slik at formelen følger variabelen. |
+| **Insert tag…** | Setter inn en tag ved markøren. Hvis en prosjektvariabel peker på enheten, settes den inn som `${pls}.reals_0`, slik at formelen følger variabelen. |
 | **Insert example…** | Erstatter formelen med et mønster å starte fra. Bytt ut `device.*`-navnene med dine egne tagger. |
 | **Note** (merknad) | Fritekst: hva dette er, og hvorfor. |
 | **When it becomes true** | Valgfri hendelse: *Info*, *Warning* eller *Alarm*, med tekst. Se [Hendelser](#9-hendelser). |
@@ -88,7 +88,7 @@ resultatet forblir foreldet (stale).
 | Form | Eksempel | Merknader |
 |---|---|---|
 | `device.name` | `pls.reals_0` | Et tagnavn med minst ett punktum. Delene etter den første kan begynne med et siffer: `pls.bit00`. |
-| `${variable}.name` | `${kv}.reals_0` | Prosjektvariabelen fylles inn før formelen leses (`kv=pls`). Endre variabelen, så følger formelen etter. |
+| `${variable}.name` | `${pls}.reals_0` | Prosjektvariabelen fylles inn før formelen leses (`pls=pls`). Endre variabelen, så følger formelen etter. |
 | `calc.name` | `calc.kv_speed_rpm` | Resultatet av en annen beregning. |
 | `[any name]` | `[plc-2.motor-temp]` | Hakeparenteser for navn med `-` eller andre tegn. |
 
@@ -166,9 +166,9 @@ Verdt å vite:
 | `between(x, lo, hi)` | 1 når lo ≤ x ≤ hi, begge endepunktene inkludert |
 
 Det finnes ingen bitoperatorer. For å teste bit *n* i et ord, bruk `floor(x / 2^n) % 2 == 1`.
-For eksempel tester `floor(${kv}.words_2 / 8) % 2 == 1` bit 3. For statusord som
+For eksempel tester `floor(${pls}.words_2 / 8) % 2 == 1` bit 3. For statusord som
 innstillingsfilen til `tcplink-adapter.js` allerede deler opp i navngitte bits, som
-`${kv}.zsw1_fault`, bruker du heller dem.
+`${pls}.zsw1_fault`, bruker du heller dem.
 
 ---
 
@@ -188,22 +188,22 @@ enn 0, og ellers `false`.
 | En verdi over, under | `x > 5000`, `x <= 20` |
 | En verdi innenfor et bånd | `between(x, 900, 1100)` |
 | En verdi utenfor et bånd | `!between(x, 900, 1100)` |
-| En bestemt tilstand eller modus | `${kv}.ints_2 == 3` |
-| Enhver tilstand unntatt én | `${kv}.ints_2 != 0` |
+| En bestemt tilstand eller modus | `${pls}.ints_2 == 3` |
+| Enhver tilstand unntatt én | `${pls}.ints_2 != 0` |
 
 Betingelser kan kombineres fritt. For eksempel: kjører over 900 rpm, sensor 1 og 3 på,
 sensor 2 av, og ingen feil:
 
 ```
-${kv}.reals_0 > 900 && ${kv}.bit01 && ${kv}.bit03 && !${kv}.bit02 && !${kv}.zsw1_fault
+${pls}.reals_0 > 900 && ${pls}.bit01 && ${pls}.bit03 && !${pls}.bit02 && !${pls}.zsw1_fault
 ```
 
 **En verdi i stedet for sann/usann:** velg typen *number* og velg verdien med `if()` eller
 `? :`.
 
 ```
-if(${kv}.reals_0 > 900 && ${kv}.bit01, 1, 0)                  1 når oppfylt, ellers 0
-${kv}.reals_0 > 900 ? 3 : ${kv}.reals_0 > 200 ? 2 : 1          et nivå fra 1 til 3
+if(${pls}.reals_0 > 900 && ${pls}.bit01, 1, 0)                  1 når oppfylt, ellers 0
+${pls}.reals_0 > 900 ? 3 : ${pls}.reals_0 > 200 ? 2 : 1          et nivå fra 1 til 3
 ```
 
 ---
@@ -245,7 +245,7 @@ tid i sekunder. Det må være et rent tall fra `0.05` til `3600`, ikke en tag.
 
 ### Hvordan de får dataene sine
 
-- **Når det første argumentet er en tag** (`changes(${kv}.bit06, 2)`), sender huben hver
+- **Når det første argumentet er en tag** (`changes(${pls}.bit06, 2)`), sender huben hver
   endring av taggen til funksjonen i det øyeblikket den kommer. Ingen endring går tapt, heller
   ikke flere mellom to kontroller. `stretch` fanger da også opp pulser kortere enn en tidel av
   et sekund.
@@ -253,7 +253,7 @@ tid i sekunder. Det må være et rent tall fra `0.05` til `3600`, ikke en tag.
   beregningen regnes ut: når en inngang endres, og ti ganger i sekundet.
 - **Beregninger med tidsfunksjoner kontrolleres på nytt ti ganger i sekundet,** så `held`
   slår seg på i riktig øyeblikk, og `changes` faller tilbake når endringene stopper.
-- **De kan nøstes:** `stretch(changes(${kv}.bit06, 2) >= 6, 10)`.
+- **De kan nøstes:** `stretch(changes(${pls}.bit06, 2) >= 6, 10)`.
 
 ### Når de starter på nytt
 
@@ -347,45 +347,45 @@ For signaler som kan flimre av og på, legg til `held` eller `stretch`, så hver
 
 ## 11. Eksempler etter oppgave
 
-I disse eksemplene er `${kv}` Kjoreverk-PLS-en (`kv=pls`). Bytt ut taggene med dine egne.
+I disse eksemplene er `${pls}` PLS-en i kjøreverket (`pls=pls`). Bytt ut taggene med dine egne.
 
 ### Omregninger og avledede verdier
 
 ```
-Hastighet i rpm (TcpLink sender den i rpm)     ${kv}.reals_0
-Et normalisert tall (16#4000 = p2000) i rpm    ${kv}.ints_0 / 16384 * 3000
-Akseleffekt i W                                calc.kv_torque_nm * calc.kv_speed_rpm * 2 * pi / 60
-Temperatur fra tideler av en grad              ${kv}.ints_1 / 10
+Hastighet i rpm (TcpLink sender den i rpm)     ${pls}.reals_0
+Et normalisert tall (16#4000 = p2000) i rpm    ${pls}.ints_0 / 16384 * 3000
+Akseleffekt i W                                calc.moment_Nm * calc.kv_speed_rpm * 2 * pi / 60
+Temperatur fra tideler av en grad              ${pls}.ints_1 / 10
 Virkningsgrad i %, tåler 0 som inndata         if(calc.power_in > 0, calc.power_out / calc.power_in * 100, 0)
-Begrenset til et område                        clamp(${kv}.ints_0, 0, 3000)
+Begrenset til et område                        clamp(${pls}.ints_0, 0, 3000)
 ```
 
 ### Betingelser
 
 ```
-Normal kjøring                      boolean   abs(calc.kv_speed_rpm) > 100 && ${kv}.zsw1_enabled && !${kv}.zsw1_fault
-Minst 2 av 3 sensorer               boolean   count(${kv}.bit01, ${kv}.bit02, ${kv}.bit03) >= 2
+Normal kjøring                      boolean   abs(calc.kv_speed_rpm) > 100 && ${pls}.zsw1_enabled && !${pls}.zsw1_fault
+Minst 2 av 3 sensorer               boolean   count(${pls}.bit01, ${pls}.bit02, ${pls}.bit03) >= 2
 Hastighet innenfor arbeidsbåndet    boolean   between(calc.kv_speed_rpm, 1400, 1600)
-Et bestemt steg i en sekvens        boolean   ${kv}.ints_2 == 4
-Bit 3 i et ord, uten navngitt bit   boolean   floor(${kv}.words_0 / 8) % 2 == 1
-Et tilstandsnummer for en lampe     number    ${kv}.zsw1_fault ? 2 : ${kv}.zsw1_alarm ? 1 : 0
+Et bestemt steg i en sekvens        boolean   ${pls}.ints_2 == 4
+Bit 3 i et ord, uten navngitt bit   boolean   floor(${pls}.words_0 / 8) % 2 == 1
+Et tilstandsnummer for en lampe     number    ${pls}.zsw1_fault ? 2 : ${pls}.zsw1_alarm ? 1 : 0
 ```
 
 ### Kontroller over tid
 
 ```
-Løs kabel: sensoren flimrer                     boolean   changes(${kv}.bit06, 2) >= 6
+Løs kabel: sensoren flimrer                     boolean   changes(${pls}.bit06, 2) >= 6
 Kollisjon: farten endres raskere enn rampen     boolean   abs(rate(calc.kv_speed_rpm, 0.3)) > 4000
 Hold en kollisjon synlig i 10 s                 boolean   stretch(calc.kv_crash, 10)
-Jevn fart: stabil i 3 s                         boolean   held(abs(calc.kv_speed_rpm) > 1000 && ${kv}.zsw1_enabled, 3)
-Ignorer glitcher under 0.5 s                    boolean   held(${kv}.bit07, 0.5)
-Ignorer glitcher, og hold så på i 2 s           boolean   stretch(held(${kv}.bit07, 0.5), 2)
-Frossen sensor: ingen endring på 60 s i drift   boolean   held(${kv}.bit01, 60) && changes(${kv}.ints_1, 60) == 0
-Pulser det siste minuttet                       number    changes(${kv}.bit08, 60) / 2
+Jevn fart: stabil i 3 s                         boolean   held(abs(calc.kv_speed_rpm) > 1000 && ${pls}.zsw1_enabled, 3)
+Ignorer glitcher under 0.5 s                    boolean   held(${pls}.bit07, 0.5)
+Ignorer glitcher, og hold så på i 2 s           boolean   stretch(held(${pls}.bit07, 0.5), 2)
+Frossen sensor: ingen endring på 60 s i drift   boolean   held(${pls}.bit01, 60) && changes(${pls}.ints_1, 60) == 0
+Pulser det siste minuttet                       number    changes(${pls}.bit08, 60) / 2
 Akselerasjon i rpm per sekund                   number    rate(calc.kv_speed_rpm, 0.5)
-Strekning den siste timen, i m                  number    delta(${kv}.dints_0, 3600) / 1000
-Gjennomsnittstemperatur over 10 minutter        number    avgOver(${kv}.ints_1, 600) / 10
-Høyeste moment det siste minuttet               number    maxOver(calc.kv_torque_nm, 60)
+Strekning den siste timen, i m                  number    delta(${pls}.dints_0, 3600) / 1000
+Gjennomsnittstemperatur over 10 minutter        number    avgOver(${pls}.ints_1, 600) / 10
+Høyeste moment det siste minuttet               number    maxOver(calc.moment_Nm, 60)
 Energi den siste timen, kWh (effekt i kW)       number    avgOver(calc.power_kw, 3600)
 ```
 
@@ -426,7 +426,7 @@ Noen av disse trenger en forklaring:
 | *use == to compare* | Et enkelt `=` i formelen |
 | *"speed" is not a tag (tags look like device.name) or a known constant* | Et ord uten punktum. Legg til enhetsdelen, eller bruk `${var}.speed` |
 | *unknown function foo()* | En feilstavet funksjon; navnene skiller mellom store og små bokstaver (`avgOver`, ikke `avgover`) |
-| *unknown variable ${dev}* | Prosjektet har ingen variabel `dev`. Sjekk *Variables* i prosjektpanelet |
+| *unknown variable ${kv}* | Prosjektet har ingen variabel `kv`. Sjekk *Variables* i prosjektpanelet: i kjøreverket heter den `pls` (`pls=pls`), så formelen skal ha `${pls}` |
 | *sqrt() takes 1 argument*, *if() takes 3 arguments* | Feil antall verdier i parentesen |
 | *rate(): the time must be a number of seconds from 0.05 to 3600* | Tiden er en tag, et uttrykk eller utenfor området |
 | *rate() takes an input and a time in seconds, like rate(x, 2)* | Tiden mangler |

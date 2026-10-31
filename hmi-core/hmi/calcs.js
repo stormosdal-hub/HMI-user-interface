@@ -21,7 +21,7 @@
   const BARE_TAG = /^[A-Za-z_]\w*(\.\w+)+$/;
 
   const HELP = [
-    ['Tags', 'mono_1.speed \u00b7 ${mono}.speed \u00b7 calc.motor_power \u00b7 [odd-name.with-dashes]'],
+    ['Tags', 'pls.reals_0 \u00b7 ${pls}.reals_0 \u00b7 calc.kv_power_w \u00b7 [odd-name.with-dashes]'],
     ['Operators', '+ \u2212 * / % ^ \u00b7 == != < <= > >= \u00b7 && || ! \u00b7 cond ? a : b'],
     ['Functions', 'abs sqrt pow exp log log10 sin cos tan asin acos atan atan2 floor ceil round(x, digits) sign min max avg sum hypot clamp(x, lo, hi) if(cond, a, b)'],
     ['Conditions', 'a && b && !c (all of them) \u00b7 a || b (any) \u00b7 count(a, b, c) >= 2 (at least two true) \u00b7 between(x, lo, hi) \u00b7 choose type boolean for yes/no results'],
@@ -169,7 +169,7 @@
       ta.value = c.formula || '';
       ta.rows = 2;
       ta.spellcheck = false;
-      ta.placeholder = '${mono}.torque * ${mono}.speed * 2 * pi / 60 / 1000';
+      ta.placeholder = '${pls}.reals_1 * ${pls}.reals_0 * 2 * pi / 60';
       d.append(ta);
 
       const tools = el('div', 'ce-tools');

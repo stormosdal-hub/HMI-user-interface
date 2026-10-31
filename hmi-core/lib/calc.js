@@ -8,7 +8,7 @@
  * tagverdier — en prosjektfil kan ikke kjøre kode på maskinen som kjører huben.
  *
  *   tall         1   2.5   .5   1e3
- *   tagger       mono_1.speed   calc.motor_power   [odd-name.with-dashes]
+ *   tagger       pls.reals_0   calc.kv_power_w   [odd-name.with-dashes]
  *   konstanter   pi  e  true  false
  *   operatorer   + - * / % ^   == != < <= > >=   && || !   cond ? a : b
  *   funksjoner   abs sqrt pow exp log log10 sin cos tan asin acos atan atan2

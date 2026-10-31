@@ -206,7 +206,7 @@ function trim() {
 let recording = null;         // regelsettet fra serveren, sjekket
 let rulesVersion = null;
 let compiled = null;          // reglene klare til bruk; null til både reglene og variablene er hentet
-let vars = null;              // prosjektets variabler (${kv}) fra huben
+let vars = null;              // prosjektets variabler (${pls}) fra huben
 let live = null;              // regelmotoren for sanntidsverdiene
 let pauseIds = '';            // pausene som gjelder nå (id-er), for å se når det endres
 let pausesOn = [];

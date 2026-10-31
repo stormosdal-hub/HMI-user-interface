@@ -25,6 +25,8 @@ forklarer hva skriptet gjør, og hvordan det gjøres for hånd.
 | Loggene | i RAM: `/etc/systemd/journald.conf.d/kjoreverk.conf` |
 | Brukeren tjenestene kjører som | den som kjørte `sudo bash install.sh`, vanligvis `pi` |
 
+![Filene på Pi-en: prosjektmappen i /opt/kjoreverk, oppsettet install.sh skriver i /etc, og tjenestene systemd starter](hmi-core/docs/pi-files.svg)
+
 ## Installere med skriptet
 
 ### Hvor prosjektmappen ligger
@@ -131,12 +133,19 @@ som ikke lenger finnes i prosjektet, som `kjoreverk@binary-adapter.service`, sto
 
 ### Kjøre det på nytt og oppdatere
 
-Skriptet kan kjøres så ofte du vil. Det som står fra før (navnet, PLS-en, serveren, nøkkelen og
-brukeren), blir standard, og tjenestene startes på nytt.
+Skriptet kan kjøres så ofte du vil, og det er slik en oppdatering tas i bruk. Det som står fra
+før (navnet, PLS-en, serveren, nøkkelen og brukeren), blir standard, og tjenestene startes på
+nytt med den nye koden. At det er kjørt før, gjør ingenting: filer som ikke er endret, lar det
+være.
 
 - **Oppdatere programmet:** kopier de nye filene over de gamle, som for en ny Pi, og kjør
   `sudo bash /opt/kjoreverk/install.sh --yes`. Kopieringen sletter ikke filer som er fjernet fra
   prosjektet; de blir liggende uten å gjøre noe.
+- **Når tjenestene startes på nytt,** begynner huben med tomt minne: trendene, hendelsesloggen
+  og kvitteringene. Det PLS-en har logget, kommer tilbake. Recorderen sender det som venter, i
+  høyst 5 sekunder før den stopper; oppdater når serveren er tilgjengelig, ellers er det som lå
+  i køen, borte.
+- **HMI-sidene som står åpne**, kjører den gamle koden til de lastes inn på nytt (F5).
 - **Endre én ting:** for eksempel `sudo bash /opt/kjoreverk/install.sh --token <ny nøkkel>`.
 - **Endre HMI-prosjektet på alle Pi-ene:** `hmi-core/config/` kopieres med resten. Har noen
   lagret endringer i HMI-en på én Pi, kopier `hmi-core/config/` derfra først, ellers blir de

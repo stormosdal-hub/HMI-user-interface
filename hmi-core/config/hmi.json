@@ -8,14 +8,12 @@
     "url": ""
   },
   "vars": {
-    "dev": "sim_1",
-    "mono": "mono_1",
-    "kv": "pls"
+    "pls": "pls"
   },
   "screens": [
     {
       "id": "monorail",
-      "name": "Monorail",
+      "name": "Kjøeverk 52 ",
       "widgets": [
         {
           "id": "svg-kjoreverk",
@@ -32,12 +30,7 @@
             "bindings": [
               {
                 "target": "on_off_btn",
-                "tag": "${mono}.power",
-                "action": "toggle"
-              },
-              {
-                "target": "on_off_btn",
-                "tag": "${mono}.power",
+                "tag": "${pls}.bit00",
                 "action": "color",
                 "apply": "fill",
                 "rules": [
@@ -49,50 +42,31 @@
               },
               {
                 "target": "FWD_btn",
-                "tag": "${mono}.fwd",
-                "action": "momentary",
-                "on": "true",
-                "off": "false"
-              },
-              {
-                "target": "FWD_btn",
-                "tag": "${mono}.fwd",
+                "tag": "${pls}.bit11",
                 "action": "color",
                 "apply": "fill",
                 "rules": [
                   {
                     "when": "true",
-                    "color": "#5cc8e8"
+                    "color": "#75e85e"
                   }
                 ]
               },
               {
                 "target": "BWD_btn",
-                "tag": "${mono}.bwd",
-                "action": "momentary",
-                "on": "true",
-                "off": "false"
-              },
-              {
-                "target": "BWD_btn",
-                "tag": "${mono}.bwd",
+                "tag": "${pls}.bit01",
                 "action": "color",
                 "apply": "fill",
                 "rules": [
                   {
                     "when": "true",
-                    "color": "#5cc8e8"
+                    "color": "#ff5c5c"
                   }
                 ]
               },
               {
                 "target": "FU_switch",
-                "tag": "${mono}.fu_off",
-                "action": "toggle"
-              },
-              {
-                "target": "FU_switch",
-                "tag": "${mono}.fu_off",
+                "tag": "${pls}.bit12",
                 "action": "color",
                 "apply": "stroke",
                 "rules": [
@@ -104,7 +78,7 @@
               },
               {
                 "target": "motor",
-                "tag": "${mono}.motor_run",
+                "tag": "${pls}.bit16",
                 "action": "color",
                 "apply": "fill",
                 "rules": [
@@ -115,53 +89,32 @@
                 ]
               },
               {
-                "target": "motor",
-                "tag": "${mono}.speed",
-                "action": "text",
-                "template": "{value}",
-                "decimals": 0
-              },
-              {
                 "target": "FU_sensor",
-                "tag": "${mono}.motor_dir",
-                "action": "spin",
-                "when": "=1",
-                "seconds": 1.2
-              },
-              {
-                "target": "FU_sensor",
-                "tag": "${mono}.motor_dir",
-                "action": "spin",
-                "when": "=-1",
-                "seconds": -1.2
-              },
-              {
-                "target": "FU_sensor",
-                "tag": "${mono}.motor_run",
+                "tag": "${pls}.bit10",
                 "action": "color",
-                "apply": "both",
+                "apply": "fill",
                 "rules": [
                   {
                     "when": "true",
-                    "color": "#43c483"
+                    "color": "#ffd500"
                   }
                 ]
               },
               {
                 "target": "photo_30",
-                "tag": "${mono}.photo_30",
+                "tag": "${pls}.bit07",
                 "action": "color",
                 "apply": "fill",
                 "rules": [
                   {
                     "when": "true",
-                    "color": "#f2b441"
+                    "color": "#f29640"
                   }
                 ]
               },
               {
                 "target": "photo_05",
-                "tag": "${mono}.photo_05",
+                "tag": "${pls}.bit05",
                 "action": "color",
                 "apply": "fill",
                 "rules": [
@@ -173,74 +126,71 @@
               },
               {
                 "target": "V3_initiator",
-                "tag": "${mono}.v3",
+                "tag": "${pls}.bit09",
                 "action": "color",
                 "apply": "stroke",
                 "rules": [
                   {
                     "when": "true",
-                    "color": "#f2b441"
+                    "color": "#2bff00"
                   }
                 ]
               },
               {
                 "target": "SI_rail",
-                "tag": "${mono}.si",
+                "tag": "${pls}.bit02",
                 "action": "color",
                 "apply": "fill",
                 "rules": [
                   {
                     "when": "true",
-                    "color": "#f2b441"
+                    "color": "#f24040"
                   }
                 ]
               },
               {
                 "target": "BI_rail",
-                "tag": "${mono}.bi",
+                "tag": "${pls}.bit03",
                 "action": "color",
                 "apply": "fill",
                 "rules": [
                   {
                     "when": "true",
-                    "color": "#f2b441"
+                    "color": "#f2d440"
                   }
                 ]
               },
               {
                 "target": "SL_rail",
-                "tag": "${mono}.sl",
+                "tag": "${pls}.bit04",
                 "action": "color",
                 "apply": "fill",
                 "rules": [
                   {
                     "when": "true",
-                    "color": "#f2b441"
+                    "color": "#43f240"
                   }
                 ]
               },
               {
                 "target": "boyle",
-                "tag": "${mono}.bumper",
+                "tag": "${pls}.bit06",
                 "action": "color",
                 "apply": "fill",
                 "rules": [
                   {
                     "when": "true",
-                    "color": "#e5533d"
+                    "color": "#5ae53e"
+                  },
+                  {
+                    "when": "false",
+                    "color": "#f24040"
                   }
                 ]
-              },
-              {
-                "target": "boyle",
-                "tag": "${mono}.bumper",
-                "action": "momentary",
-                "on": "true",
-                "off": "false"
               },
               {
                 "target": "error_LED",
-                "tag": "${mono}.fault",
+                "tag": "${pls}.bit13",
                 "action": "color",
                 "apply": "both",
                 "rules": [
@@ -251,45 +201,53 @@
                 ]
               },
               {
-                "target": "error_LED",
-                "tag": "${mono}.fault",
-                "action": "blink",
-                "when": "true"
+                "target": "container_photo",
+                "tag": "${pls}.bit08",
+                "action": "color",
+                "apply": "fill",
+                "rules": [
+                  {
+                    "when": "true",
+                    "color": "#43c483"
+                  }
+                ]
               },
               {
-                "target": "error_LED",
-                "tag": "${mono}.fault_reset",
-                "action": "set",
-                "value": "true"
+                "target": "motor",
+                "tag": "${pls}.ints_1",
+                "action": "text",
+                "template": "{value}",
+                "decimals": 0
+              },
+              {
+                "target": "brake_coil",
+                "tag": "${pls}.bit14",
+                "action": "color",
+                "apply": "fill",
+                "rules": [
+                  {
+                    "when": "true",
+                    "color": "#59ff00"
+                  }
+                ]
               }
             ],
-            "labelSize": 100
-          }
-        },
-        {
-          "id": "text-mono",
-          "type": "text",
-          "x": 600,
-          "y": 20,
-          "w": 660,
-          "h": 56,
-          "props": {
-            "text": "Switch on with Av/På, then hold Fram-bryter. Press the Bøyle to simulate a bumper hit, click Feil-indikator to reset.",
-            "size": "small",
-            "align": "left",
-            "color": ""
+            "labelSize": 100,
+            "timeTravel": true,
+            "window": 600,
+            "timeLink": true
           }
         },
         {
           "id": "value-rpm",
           "type": "value",
-          "x": 600,
-          "y": 90,
-          "w": 150,
-          "h": 120,
+          "x": 630,
+          "y": 30,
+          "w": 270,
+          "h": 160,
           "props": {
             "label": "Motor speed",
-            "tag": "${mono}.speed",
+            "tag": "${pls}.ints_1",
             "unit": "rpm",
             "decimals": 0,
             "warnAbove": "",
@@ -303,77 +261,15 @@
           }
         },
         {
-          "id": "value-dist",
-          "type": "value",
-          "x": 600,
-          "y": 220,
-          "w": 150,
-          "h": 100,
-          "props": {
-            "label": "Obstacle distance",
-            "tag": "${mono}.distance",
-            "unit": "m",
-            "decimals": 2,
-            "warnAbove": "",
-            "warnBelow": 3,
-            "color": "",
-            "format": "decimal",
-            "codeList": "",
-            "codeShow": "number and text",
-            "labelSize": 100,
-            "textSize": 100
-          }
-        },
-        {
-          "id": "led-fault",
-          "type": "led",
-          "x": 1150,
-          "y": 220,
-          "w": 110,
-          "h": 100,
-          "props": {
-            "label": "Fault",
-            "tag": "${mono}.fault",
-            "onValue": "",
-            "color": "#e5533d",
-            "onText": "Fault",
-            "offText": "OK",
-            "labelSize": 100,
-            "textSize": 100
-          }
-        },
-        {
-          "id": "trend-rpm",
-          "type": "trend",
-          "x": 600,
-          "y": 330,
-          "w": 660,
-          "h": 200,
-          "props": {
-            "label": "Shaft power (kW) and travel speed (m/s)",
-            "tags": "calc.motor_power, calc.velocity",
-            "window": 60,
-            "min": "",
-            "max": "",
-            "decimals": 1,
-            "color1": "",
-            "color2": "#5cc8e8",
-            "color3": "",
-            "timeControls": true,
-            "labelSize": 100,
-            "textSize": 100
-          }
-        },
-        {
           "id": "bar-torque",
           "type": "bar",
-          "x": 760,
-          "y": 90,
+          "x": 940,
+          "y": 40,
           "w": 260,
           "h": 120,
           "props": {
-            "label": "Torque (measured)",
-            "tag": "${mono}.torque",
+            "label": "Moment (målt)",
+            "tag": "calc.moment_Nm",
             "unit": "Nm",
             "min": -30,
             "max": 40,
@@ -392,114 +288,22 @@
           }
         },
         {
-          "id": "g-power",
-          "type": "gauge",
-          "x": 1030,
-          "y": 90,
-          "w": 230,
-          "h": 120,
+          "id": "timeline-uk6s4",
+          "type": "timeline",
+          "x": 620,
+          "y": 240,
+          "w": 640,
+          "h": 370,
           "props": {
-            "label": "Shaft power",
-            "tag": "calc.motor_power",
-            "unit": "kW",
-            "min": -1,
-            "max": 4,
-            "decimals": 2,
-            "style": "semicircle",
-            "thickness": "normal",
+            "label": "Timeline",
+            "tags": "${pls}.bit02, ${pls}.bit03, ${pls}.bit04, ${pls}.bit06, ${pls}.bit05, ${pls}.bit07, ${pls}.bit10, ${pls}.bit16, ${pls}.bit15, ${pls}.bit17",
+            "window": 600,
+            "onlyActive": false,
+            "timeControls": true,
+            "timeLink": true,
             "color": "",
-            "warnAbove": "",
-            "warnBelow": "",
-            "labelSize": 100,
-            "textSize": 100,
-            "thresholds": [],
-            "scaleNumbers": false,
-            "divisions": 5,
-            "alarmBlink": true
-          }
-        },
-        {
-          "id": "v-vel",
-          "type": "value",
-          "x": 760,
-          "y": 220,
-          "w": 125,
-          "h": 100,
-          "props": {
-            "label": "Travel speed",
-            "tag": "calc.velocity",
-            "unit": "m/s",
-            "decimals": 2,
-            "color": "",
-            "warnAbove": "",
-            "warnBelow": "",
-            "format": "decimal",
-            "codeList": "",
-            "codeShow": "number and text",
             "labelSize": 100,
             "textSize": 100
-          }
-        },
-        {
-          "id": "v-tto",
-          "type": "value",
-          "x": 895,
-          "y": 220,
-          "w": 125,
-          "h": 100,
-          "props": {
-            "label": "To obstacle",
-            "tag": "calc.time_to_obstacle",
-            "unit": "s",
-            "decimals": 1,
-            "color": "",
-            "warnAbove": "",
-            "warnBelow": "",
-            "format": "decimal",
-            "codeList": "",
-            "codeShow": "number and text",
-            "labelSize": 100,
-            "textSize": 100
-          }
-        },
-        {
-          "id": "l-ready",
-          "type": "led",
-          "x": 1030,
-          "y": 220,
-          "w": 110,
-          "h": 100,
-          "props": {
-            "label": "Ready",
-            "tag": "calc.drive_ready",
-            "onValue": "",
-            "color": "#43c483",
-            "onText": "Ready",
-            "offText": "Not ready",
-            "labelSize": 100,
-            "textSize": 100
-          }
-        },
-        {
-          "id": "value-8uhj9",
-          "type": "value",
-          "x": 800,
-          "y": 560,
-          "w": 200,
-          "h": 104,
-          "props": {
-            "label": "Value",
-            "tag": "",
-            "unit": "",
-            "decimals": 1,
-            "format": "decimal",
-            "codeList": "v90-faults",
-            "codeShow": "number and text",
-            "color": "",
-            "labelSize": 100,
-            "textSize": 100,
-            "warnAbove": "",
-            "warnBelow": ""
           }
         }
       ]
@@ -507,56 +311,24 @@
   ],
   "calcs": [
     {
-      "name": "motor_power",
-      "formula": "${mono}.torque * ${mono}.speed * 2 * pi / 60 / 1000",
-      "unit": "kW",
-      "decimals": 2,
-      "type": "number",
-      "description": "Mechanical shaft power P = T·ω with ω = rpm · 2π/60. Negative while braking."
-    },
-    {
-      "name": "velocity",
-      "formula": "${mono}.speed / 1450 * 1.2",
-      "unit": "m/s",
-      "decimals": 2,
-      "type": "number",
-      "description": "Travel speed. The simulator moves 1.2 m/s at 1450 rpm; replace 1.2 with the real gear and wheel factor."
-    },
-    {
-      "name": "time_to_obstacle",
-      "formula": "if(${mono}.motor_dir == 1 && calc.velocity > 0.01, ${mono}.distance / calc.velocity, 0)",
-      "unit": "s",
-      "decimals": 1,
-      "type": "number",
-      "description": "Seconds until the obstacle at the current speed, 0 when not driving forward. Uses calc.velocity."
-    },
-    {
-      "name": "drive_ready",
-      "formula": "${mono}.power && !${mono}.fu_off && !${mono}.fault",
-      "unit": "",
-      "decimals": 0,
-      "type": "boolean",
-      "description": "Power on, frequency converter connected and no fault."
-    },
-    {
       "name": "kv_speed_rpm",
-      "formula": "${kv}.reals_0",
+      "formula": "${pls}.reals_0",
       "unit": "rpm",
       "decimals": 0,
       "type": "number",
       "description": "Speed from TcpLink (txAnalog.reals[0], Hastighet [rpm]), already in rpm. The other kv_* calculations use this name, so they don't depend on where the PLC puts the speed."
     },
     {
-      "name": "kv_torque_nm",
-      "formula": "${kv}.reals_1",
+      "name": "moment_Nm",
+      "formula": "${pls}.ints_2 / 1000",
       "unit": "Nm",
       "decimals": 2,
       "type": "number",
-      "description": "Torque from TcpLink (txAnalog.reals[1], Moment [Nm]), already in Nm."
+      "description": "Torque from TcpLink (txAnalog.ints[2]). The PLC sends it in thousandths of a Nm, so it is divided by 1000 to Nm. kv_power_w uses this name."
     },
     {
       "name": "kv_power_w",
-      "formula": "calc.kv_torque_nm * calc.kv_speed_rpm * 2 * pi / 60",
+      "formula": "calc.moment_Nm * calc.kv_speed_rpm * 2 * pi / 60",
       "unit": "W",
       "decimals": 0,
       "type": "number",
@@ -564,7 +336,7 @@
     },
     {
       "name": "kv_cable_fault",
-      "formula": "changes(${kv}.bit06, 2) >= 6",
+      "formula": "changes(${pls}.bit06, 2) >= 6",
       "unit": "",
       "decimals": 0,
       "type": "boolean",
@@ -596,7 +368,7 @@
     },
     {
       "name": "kv_cruising",
-      "formula": "held(abs(calc.kv_speed_rpm) > 1000 && ${kv}.zsw1_enabled && !${kv}.zsw1_fault, 3)",
+      "formula": "held(abs(calc.kv_speed_rpm) > 1000 && ${pls}.zsw1_enabled && !${pls}.zsw1_fault, 3)",
       "unit": "",
       "decimals": 0,
       "type": "boolean",
@@ -611,5 +383,5 @@
       "description": "How fast the speed is changing."
     }
   ],
-  "editCode": ""
+  "editCode": "4819"
 }

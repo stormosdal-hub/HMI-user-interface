@@ -3,14 +3,14 @@
  *
  * Formen på konfigurasjonen (lagret av huben i config/hmi.json, eller eksportert som fil):
  * {
- *   "project": "Pump station",
+ *   "project": "Kjøreverk",
  *   "canvas": { "width": 1280, "height": 720 },
  *   "hub": { "url": "" },              // tom = samme vert som siden ble levert fra
- *   "vars": { "dev": "esp32_1" },      // ${dev} inne i tagnavn byttes ut
+ *   "vars": { "pls": "pls" },          // ${pls} inne i tagnavn byttes ut
  *   "screens": [
  *     { "id": "main", "name": "Main", "widgets": [
  *        { "id": "gauge-1", "type": "gauge", "x": 20, "y": 20, "w": 200, "h": 170,
- *          "props": { "label": "Temperature", "tag": "${dev}.temp", "unit": "°C", "min": 0, "max": 100 } }
+ *          "props": { "label": "Speed", "tag": "${pls}.reals_0", "unit": "rpm", "min": 0, "max": 3000 } }
  *     ] }
  *   ]
  * }
@@ -444,7 +444,7 @@
   }
 
   // tagoversikten: alle tagger med levende verdi; pick() utelates for bare å se
-  // (Data-list i topplinjen, og prosjektpanelet)
+  // (Tag-list i topplinjen, og prosjektpanelet)
   function browseTags(current, pick, title) {
     H.openTagBrowser({
       tags: () => state.tags,
@@ -537,7 +537,7 @@
       for (const line of vars.value.split('\n')) { const m = line.match(/^\s*(\w+)\s*=\s*(.*?)\s*$/); if (m) out[m[1]] = m[2]; }
       state.config.vars = out; markDirty(); renderCanvas();
     });
-    box.append(field('Variables (one per line: name=value)', vars, 'Use ${name} inside tag names, e.g. ${dev}.temp — change the variable to retarget every widget'));
+    box.append(field('Variables (one per line: name=value)', vars, 'Use ${name} inside tag names: with pls=pls, ${pls}.bit00 is pls.bit00. Change the value to retarget every widget. Writing the tag out (pls.bit00) works too'));
 
     box.append(el('h2', null, 'Screen'));
     box.append(field('Name', textInput(screen.name, v => { screen.name = v; markDirty(); renderScreens(); })));
@@ -1806,7 +1806,7 @@
     $('#mode-run').addEventListener('click', () => setMode('run'));
     $('#btn-save').addEventListener('click', saveConfig);
     $('#btn-calcs').addEventListener('click', openCalcs);
-    $('#btn-data').addEventListener('click', () => browseTags('', undefined, 'Data list'));
+    $('#btn-data').addEventListener('click', () => browseTags('', undefined, 'Tag list'));
     $('#inspector').addEventListener('change', () => {
       const s = inspectorShown;
       if (s && shownKeys(s.w) !== s.keys) renderInspector();

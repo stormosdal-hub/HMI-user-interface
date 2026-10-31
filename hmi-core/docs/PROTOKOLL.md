@@ -225,7 +225,7 @@ ville lagret.
 ```
 
 - **Første regel som treffer, gjelder.** En tag ingen regel treffer, lagres ikke.
-- **`${kv}` i et mønster** byttes ut på Pi-en med prosjektets variabler (`vars` i `hmi.json`).
+- **`${pls}` i et mønster** byttes ut på Pi-en med prosjektets variabler (`vars` i `hmi.json`).
   Det samme regelsettet virker da også der enhetene heter forskjellig.
 - **Tider i `pauses`** er millisekunder i UTC, ikke tekst. Den gamle regelfilen hadde lokal tid
   som tekst. `until: null` betyr til pausen oppheves.

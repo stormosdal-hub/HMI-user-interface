@@ -6,6 +6,7 @@ Diagrammene lages av disse skriptene (Python 3, ingen pakker trengs):
 python arch.py       # skriver ../architecture.svg
 python tcplink.py    # skriver ../tcplink.svg
 python tcplink_history.py   # skriver ../tcplink-history.svg (historikken fra PLS-ens ringbuffer)
+python pi_files.py   # skriver ../pi-files.svg (filene på Pi-en, til README_systemd-service.md)
 python replay.py     # skriver ../replay.svg (forslag: opplasting og avspilling etter strømbrudd)
 ```
 

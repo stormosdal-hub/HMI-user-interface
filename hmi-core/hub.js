@@ -417,12 +417,12 @@ function applyCodeChanges(codes, changes) {
 }
 
 // ---------------------------------------------------------------- tagnavn
-// { tags: { "${kv}.bit05": { name: "Dør lukket", info: "Endebryter B12, venstre dør", updated } } }
+// { tags: { "${pls}.bit05": { name: "Dør lukket", info: "Endebryter B12, venstre dør", updated } } }
 // Ditt eget navn og din egen beskrivelse for en tag, i stedet for en endring i PLS-programmet:
 // taggen beholder navnet sitt, så skjermbilder, regler og lagret historikk forblir som de er, og
 // HMI-en viser ditt. En egen fil ved siden av prosjektet,
-// som kodetekstene. Et navn lagret for pls.bit05 mens prosjektvariabelen kv = pls, lagres som
-// ${kv}.bit05, så det følger variabelen: en enhet med kv = pls2 får de samme navnene.
+// som kodetekstene. Et navn lagret for pls.bit05 mens prosjektvariabelen pls = pls, lagres som
+// ${pls}.bit05, så det følger variabelen: med pls = pls2 får pls2.bit05 det samme navnet.
 let tagNames = new Map();   // tag (variabler satt inn) -> { name, info, key }
 
 function readNames() {
@@ -461,7 +461,7 @@ function indexNames() {
   tagNames = next;
 }
 
-// pls.bit05 -> ${kv}.bit05 når en prosjektvariabel angir enheten
+// pls.bit05 -> ${pls}.bit05 når en prosjektvariabel angir enheten
 function namesKey(tag) {
   for (const k of Object.keys(projectVars)) {
     const v = projectVars[k];
@@ -816,7 +816,7 @@ function handle(c, msg) {
     }
 
     case 'subscribe': {
-      // { tags: ["a.b", "esp32_1.*", "*"] }  — uten tags betyr det alt
+      // { tags: ["a.b", "pls.*", "*"] }  — uten tags betyr det alt
       const list = Array.isArray(msg.tags) && msg.tags.length ? msg.tags : ['*'];
       for (const s of list) c.subs.add(String(s));
       // send nåværende verdier med en gang, så widgetene får innhold når de lastes

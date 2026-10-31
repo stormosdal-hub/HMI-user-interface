@@ -4,10 +4,10 @@
  * H.openTagBrowser({
  *   tags()        -> Map(navn -> oppføring i registeret)      (state.tags)
  *   live(name)    -> { value, quality, ts } | undefined   (state.values)
- *   vars          -> prosjektvariabler, så en valgt tag kan settes inn som ${dev}.temp
+ *   vars          -> prosjektvariabler, så en valgt tag kan settes inn som ${pls}.bit00
  *   current       -> taggen feltet har nå (oppløst), uthevet
  *   pick(text)    -> kalles med den valgte taggen; utelat for bare å se
- *   title         -> overskriften (valgfri), f.eks. 'Data list'
+ *   title         -> overskriften (valgfri), f.eks. 'Tag list'
  *   editName(tag, name, info) -> Promise: lagrer ditt eget navn og beskrivelse for en tag
  *                    (tagnavn, holdt av huben); utelat, så blir navn bare vist
  * })
@@ -76,7 +76,7 @@
       useVars.type = 'checkbox';
       useVars.checked = true;
       lab.append(useVars, document.createTextNode(' Insert with project variables'));
-      lab.title = 'mono_1.speed is inserted as ${mono}.speed, so the widget follows the variable';
+      lab.title = 'pls.bit00 is inserted as ${pls}.bit00, so the widget follows the variable';
       bar.append(lab);
     }
 
