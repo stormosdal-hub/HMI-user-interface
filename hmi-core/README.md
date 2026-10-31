@@ -32,7 +32,7 @@ HMI-en tilbake til PLS-en. Alle nettlesere som åpner HMI-en, ser de samme tagge
 8. [Lagring til database](#8-lagring-til-database): hva huben holder i minnet, og [recorderen](#recorderen-til-den-sentrale-serveren) som sender til den sentrale serveren
 9. [Tegninger (SVG)](#9-tegninger-svg) — hva en tegning trenger, og [å spole tilbake i tid](#spole-tilbake-i-tid)
 10. [Animasjoner (Three.js)](#10-animasjoner-threejs) — hva en kodesnutt trenger
-11. [Forbindelsen til PLS-en](#11-forbindelsen-til-pls-en) — [kjøreverkets navn](#kjøreverkets-navn), [tcplink-adapter.js med navnene fra PLS-en](#tcplink-navnene-kommer-fra-pls-en), [historikken fra PLS-en](#historikken-fra-pls-en), binary-adapter.js og layouten, og [eksempeladaptere](#andre-enheter-og-programmer) for andre enheter
+11. [Forbindelsen til PLS-en](#11-forbindelsen-til-pls-en) — [kjøreverkets navn](#kjøreverkets-navn), [tcplink-adapter.js med navnene fra PLS-en](#tcplink-navnene-kommer-fra-pls-en) og [historikken fra PLS-en](#historikken-fra-pls-en)
 12. [Referanse](#12-referanse) — protokoll, HTTP-API, prosjektfil, kommandolinje
 13. [Sikkerhet](#13-sikkerhet)
 14. [Feilsøking](#14-feilsøking)
@@ -64,11 +64,9 @@ node adapters/tcplink-adapter.js # forbindelsen til PLS-en (TcpLink)
   §10): `rxBadReason`, `namesStatus` og de låste feilkodene i instans-DB-en til TcpLink.
 - **PLS-en tar imot én klient** per TcpLink-instans. Stopp andre klienter på samme port
   først, også `tcplink_web.js` fra PLS-prosjektet.
-- **Kjører PLS-en den eldre KjoreverkLink-blokken**, start
-  `node adapters/binary-adapter.js adapters/binary-layouts/kjoreverk-layout.json` i stedet; se
-  [Pakket binærdata](#pakket-binærdata).
-- **Automatisk start på Pi-en** (ved oppstart og etter strømbrudd, med omstart hvis noe
-  krasjer): se `README_systemd-service.md` i mappen over `hmi-core`.
+- **På Pi-en i kjøreverket** setter `sudo bash /opt/kjoreverk/install.sh` opp alt: kjøreverkets
+  navn, tjenestene som starter ved oppstart og etter strømbrudd, recorderen og klokka. Se
+  `README_systemd-service.md` i mappen over `hmi-core`.
 
 Åpne <http://localhost:8080>, eller `http://<pi-ip>:8080` fra en annen maskin på nettverket.
 Bytt mellom **Edit** og **Run** øverst til høyre.
@@ -88,10 +86,18 @@ innstillingsfilen (se [13](#hold-for-å-kjøre-over-et-nettverk)).
 (`ws` og three.js) er ren JavaScript, så en mappe som er installert på Windows, virker uendret
 på en Pi:
 
-1. **På en datamaskin med internett** pakker du ut `hmi-core` og kjører `npm install` i
-   mappen. Kopier hele mappen, også `node_modules`, til en minnepenn.
-2. **På Pi-en** kopierer du den fra minnepennen, for eksempel
-   `cp -r /media/$USER/<stick>/hmi-core ~/`, og kjører så `node hub.js` i den.
+1. **På en datamaskin med internett** kjører du `npm install` i `hmi-core`. Kopier hele
+   prosjektmappen (den med `install.sh` og `hmi-core/`), også `hmi-core/node_modules`, til en
+   minnepenn. `node_modules` følger med i git, så `npm install` trengs bare når
+   avhengighetene er endret.
+2. **På Pi-en** kopierer du den fra minnepennen til `/opt/kjoreverk` (den samme stien på alle
+   Pi-ene) og kjører installasjonsskriptet:
+
+   ```bash
+   sudo mkdir -p /opt/kjoreverk
+   sudo cp -r /media/$USER/<stick>/<prosjektmappen>/. /opt/kjoreverk/
+   sudo bash /opt/kjoreverk/install.sh
+   ```
 
 **"SyntaxError: Unexpected token" ved oppstart betyr at Node.js på Pi-en er eldre enn koden
 forventer.** Sjekk den med `node -v`. Gamle utgaver av Raspberry Pi OS har gamle
@@ -150,17 +156,20 @@ Det finnes tre slags filer. Det er det å vite hvilke som er hvilke, som gjør H
 gjenbrukbar.
 
 ```
-hmi-core/
-  hub.js           program: huben og HMI-en            node hub.js
-  recorder.js      program: sender til den sentrale serveren   node recorder.js
-  adapters/        programmer: tcplink-adapter.js og binary-adapter.js (PLS-en), tcp-bridge.js, og eksempeladapterne
-  lib/             kode programmene bruker; kjøres ikke alene (calc.js, record-rules.js, vehicle.js)
-  hmi/             nettsiden til HMI-en, som huben sender til nettleseren
-  config/          prosjektet: hmi.json, codes.json, tagnames.json, assets/
-  docs/            dokumentasjonen og diagrammene
+/opt/kjoreverk/              prosjektmappen på Pi-en
+  install.sh                 setter opp Pi-en: navnet, tjenestene, recorderen, klokka
+  README_systemd-service.md  installasjonen og tjenestene
+  hmi-core/
+    hub.js           program: huben og HMI-en            node hub.js
+    recorder.js      program: sender til den sentrale serveren   node recorder.js
+    adapters/        program: tcplink-adapter.js (PLS-en), og innstillingene i tcplink-options/
+    lib/             kode programmene bruker; kjøres ikke alene (calc.js, record-rules.js, vehicle.js)
+    hmi/             nettsiden til HMI-en, som huben sender til nettleseren
+    config/          prosjektet: hmi.json, codes.json, tagnames.json, assets/
+    docs/            dokumentasjonen og diagrammene
 ```
 
-Alt du starter med `node`, ligger altså øverst eller i `adapters/`.
+Alt du starter med `node`, ligger altså øverst i `hmi-core` eller i `adapters/`.
 
 ### Kjerne — den samme i alle prosjekter, ikke endre den for et prosjekt
 
@@ -170,12 +179,10 @@ Alt du starter med `node`, ligger altså øverst eller i `adapters/`.
 | `lib/calc.js` | Formelspråket for beregnede tagger. Brukes av `hub.js` |
 | `recorder.js` | Sender taggene og hendelsene reglene velger, til den sentrale serveren. Se [Recorderen](#recorderen-til-den-sentrale-serveren) |
 | `lib/record-rules.js` | Lagringsreglene recorderen bruker (dødbånd, intervaller, flimring, pauser). Brukes av `recorder.js` |
-| `lib/vehicle.js` | Leser [kjøreverkets navn](#kjøreverkets-navn) fra `/etc/kjoreverk/vehicle`. Brukes av adapterne, `hub.js` og `recorder.js` |
+| `lib/vehicle.js` | Leser [kjøreverkets navn](#kjøreverkets-navn) fra `/etc/kjoreverk/vehicle`. Brukes av `tcplink-adapter.js`, `hub.js` og `recorder.js` |
 | `hmi/` (hele mappen) | HMI-en i nettleseren: editor, kjøremiljø, alle widgeter, stiler |
 | `package.json` | Avhengigheter (`ws`, `three`) — `npm install` lager `node_modules/` ut fra den |
 | `adapters/tcplink-adapter.js` | Forbindelsen til en PLS med TcpLink-blokken: størrelsene og navnene på plassene kommer fra PLS-en, så den trenger ingen layoutfil. Se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en) |
-| `adapters/binary-adapter.js` | Forbindelsen til en PLS med KjoreverkLink-blokken: gjør de faste blokkene fra S7-1200 (OUC over TCP) om til navngitte tagger, og sender kommandoene tilbake. Konfigureres med en layoutfil, redigeres aldri. Se [Pakket binærdata](#pakket-binærdata) |
-| `adapters/tcp-bridge.js` | En generell bro for enheter som sender JSON-linjer over rå TCP. PLS-en bruker den ikke; bruken står øverst i filen |
 | `README.md` | Denne filen |
 | `docs/` | `CALCULATIONS.md` (referansen for beregninger og betingelser), `PLAN.md` (planen for recorderen og den sentrale databasen), `SERVER-PLAN.md` (serveren, som bygges i et eget prosjekt), `PROTOKOLL.md` (grensesnittet mellom dem), arkitekturdiagrammene, og skriptene som tegner dem (`docs/src/`) |
 
@@ -194,20 +201,17 @@ erstattet sammen med kjernen.
 | `assets/*.svg` | Tegninger for Drawing-widgeter | Tegneprogrammet ditt; last opp i HMI-en |
 | `assets/*.js` | Three.js-kode for Animation-widgeter | Kodeeditoren i HMI-en, eller en hvilken som helst teksteditor |
 | `assets/*.glb`, `.gltf`, `.bin`, bilder | 3D-modeller og teksturer som animasjonene bruker | Kopier dem inn i mappen |
-| `binary-layouts/*-layout.json` | Layouten for PLS-blokkene til `binary-adapter.js`: hvilket felt som ligger hvor, og hva det heter | Teksteditor |
 | `tcplink-options/*-options.json` | Det `tcplink-adapter.js` ikke får fra PLS-en: tagprefikset, adressen, alarmer, bits i et statusord og hold-for-å-kjøre | Teksteditor |
 
 `hmi.json`, `codes.json`, `tagnames.json` og `assets/` ligger alltid sammen. Huben holder dem
 ved siden av den prosjektfilen den ble startet med.
 
-### Det som følger med: prosjektet, layouten og eksempeladapterne
+### Det som følger med: prosjektet og innstillingene
 
 | Fil | Hva den er |
 |---|---|
-| `adapters/binary-layouts/kjoreverk-layout.json` | Layouten for S7-1200-protokollen Kjoreverk (KjoreverkLink v0.8): blokken PLS-en sender, og kommandoblokken tilbake |
 | `adapters/tcplink-options/kjoreverk-options.json` | Innstillingene for TcpLink-blokken på kjøreverket: alarmer på feil- og varselkoden, bitene i ZSW1, og hold-for-å-kjøre på joggebitene |
-| `config/hmi.json`, `config/assets/` | Prosjektet huben starter med (se [1](#1-kom-i-gang)) |
-| `adapters/example-adapters/` | Maler for å koble til mer enn PLS-en: en ESP32, en Pico W med MicroPython, og programmer i Python og Node.js på andre maskiner. Se [Andre enheter og programmer](#andre-enheter-og-programmer) |
+| `config/hmi.json`, `config/codes.json`, `config/assets/` | Prosjektet huben starter med (se [1](#1-kom-i-gang)) |
 
 Prosjektet ligger i `hmi-core/config/` bare for at `node hub.js` skal virke med en gang.
 Vil du kunne bytte ut kjernen uten å røre prosjektet, flytter du det ut av kjernemappen, som
@@ -225,16 +229,16 @@ projects/
   kjoreverk_1/
     hmi.json               lages første gang du trykker Save
     assets/                lages første gang du laster opp
-    binary-layouts/
-      kjoreverk-layout.json   en kopi av layouten, hvis dette kjøretøyet trenger en egen
+    tcplink-options/
+      kjoreverk-options.json  en kopi av innstillingene, hvis dette kjøreverket trenger egne
 ```
 
 Start huben med prosjektfilen den skal bruke (porten først, så prosjektet), og adapteren med
-layouten:
+innstillingene:
 
 ```bash
 node hmi-core/hub.js 8080 projects/kjoreverk_1/hmi.json
-node hmi-core/adapters/binary-adapter.js projects/kjoreverk_1/binary-layouts/kjoreverk-layout.json
+node hmi-core/adapters/tcplink-adapter.js projects/kjoreverk_1/tcplink-options/kjoreverk-options.json
 ```
 
 På Windows virker det samme med omvendt skråstrek:
@@ -257,9 +261,9 @@ På Windows virker det samme med omvendt skråstrek:
 
 ## 4. Begreper
 
-**Tag.** En navngitt verdi på huben: `device.name`, f.eks. `pls.speedAct`, `pls.cmd_bit03`.
-Delen før det første punktumet er tagprefikset (`"device"` i layouten eller innstillingsfilen). En tag har en
-verdi (tall, boolsk eller tekst), et tidsstempel og en kvalitet:
+**Tag.** En navngitt verdi på huben: `device.name`, f.eks. `pls.reals_0`, `pls.cmd_bit03`.
+Delen før det første punktumet er tagprefikset (`"device"` i innstillingsfilen til adapteren).
+En tag har en verdi (tall, boolsk eller tekst), et tidsstempel og en kvalitet:
 
 | Kvalitet | Betydning |
 |---|---|
@@ -268,9 +272,9 @@ verdi (tall, boolsk eller tekst), et tidsstempel og en kvalitet:
 | `bad` | Adapteren som eier taggen, er frakoblet. Widgetene blir grå og viser *stale*, og fortsetter å vise siste verdi |
 
 **Adapter.** Et program som kobler seg til huben, publiserer tagger og utfører skrivinger.
-Her er det `tcplink-adapter.js` eller `binary-adapter.js`, som står mellom huben og PLS-en. Når den utfører en skriving,
-sender den den nye verdien tilbake (*ekkoet*): verdien som nå står i kommandoblokken til
-PLS-en. Det er ekkoet alle HMI-er viser, så et betjeningselement vises først som omslått når
+Her er det `tcplink-adapter.js`, som står mellom huben og PLS-en. Når den utfører en
+skriving, sender den den nye verdien tilbake (*ekkoet*): verdien som nå står i kommandorammen
+til PLS-en. Det er ekkoet alle HMI-er viser, så et betjeningselement vises først som omslått når
 adapteren har tatt imot det.
 
 **Hub.** Har listen over tagger og den siste verdien for hver tag, pluss de siste 600
@@ -284,7 +288,7 @@ huben tilbake fra adapteren (se [Historikken fra PLS-en](#historikken-fra-pls-en
 en formel. Se [7](#7-beregnede-verdier).
 
 **Variabler.** Teksterstatninger for hele prosjektet: `kv=pls` lar widgeter bruke
-`${kv}.speedAct`. Endre variabelen, så følger alle widgeter, koblinger, innganger og formler
+`${kv}.reals_0`. Endre variabelen, så følger alle widgeter, koblinger, innganger og formler
 med. Slik kan ett skjermbildeoppsett betjene flere enheter med samme PLS-program. Variablene
 lager ingen tagger: `kv` må være det samme som tagprefikset adapteren bruker (`"device"`).
 
@@ -324,7 +328,7 @@ tilkobling og lagres ikke i `tagnames.json`. Gir du en tag ditt eget navn, går 
 tøm feltet, så vises navnet fra PLS-en igjen. Tagoversikten viser navnet fra PLS-en som
 forslag i navnefeltet. Se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en).
 
-Layoutfilens `description` for et felt (f.eks. *ZSW1*) vises ved siden av, som det
+En `description` for plassen i innstillingsfilen til adapteren vises ved siden av, som det
 enheten selv sier.
 
 Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 sekunder):
@@ -333,7 +337,7 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
 {
   "tags": {
     "${kv}.bit05": { "name": "Dør lukket", "info": "Endebryter B12, venstre dør", "updated": 1790630666358 },
-    "${kv}.speedAct": { "name": "Motorturtall", "info": "normalisert, 16#4000 = p2000" }
+    "${kv}.reals_0": { "name": "Motorturtall", "info": "rpm, fra drivet" }
   }
 }
 ```
@@ -375,7 +379,7 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
   huben. Hver tag viser live-verdi, måleenhet, datatype og siste oppdatering, og tagger som er foreldet
   eller uten verdi, er merket, så du ser med en gang om en enhet virkelig sender. Søk, filtrer
   (enheter, beregnede, live, foreldede) og klikk på en tag for å bruke den. Når en
-  prosjektvariabel navngir enheten, settes taggen inn som `${kv}.speedAct`, så widgeten fortsetter
+  prosjektvariabel navngir enheten, settes taggen inn som `${kv}.reals_0`, så widgeten fortsetter
   å følge variabelen. For trender legges den valgte taggen til i listen.
 - **☰ Data-list** i topplinjen (Edit-modus) åpner det samme vinduet bare for å se: alle
   taggene på huben med navn, live-verdi, måleenhet, datatype og alder. *Browse tags with live
@@ -518,7 +522,7 @@ har en ⓘ som åpner beskrivelsen av koden.
 
 | Kilde | Aktiv så lenge | Eksempel |
 |---|---|---|
-| En plass i innstillingsfilen (eller et felt i layouten) med `"event": "alarm"` eller `"warning"` | verdien ikke er 0 | `pls.words_0` (Feilkode) og `pls.words_1` (Varselkode) i `kjoreverk-options.json` |
+| En plass i innstillingsfilen med `"event": "alarm"` eller `"warning"` | verdien ikke er 0 | `pls.words_0` (Feilkode) og `pls.words_1` (Varselkode) i `kjoreverk-options.json` |
 | En beregning med en *Warning*- eller *Alarm*-hendelse | resultatet er sant | `calc.kv_crash` |
 | En adapter som har koblet fra | til den kobler til igjen | *kv_52: Adapter disconnected* |
 | En PLS-forbindelse | ingen data fra PLS-en på 2 s | *kv_52: No data from the PLC* |
@@ -691,7 +695,7 @@ calc.motor_power  [kW]  =  ${mono}.torque * ${mono}.speed * 2 * pi / 60 / 1000
 
 | | |
 |---|---|
-| Tagger | `pls.speedAct` `${kv}.speedAct` `calc.kv_power_w` `[odd-name.with-dashes]` |
+| Tagger | `pls.reals_0` `${kv}.reals_0` `calc.kv_power_w` `[odd-name.with-dashes]` |
 | Operatorer | `+ - * / % ^`  `== != < <= > >=`  `&&` `\|\|` `!`  `cond ? a : b` |
 | Funksjoner | `abs sqrt pow exp log log10 sin cos tan asin acos atan atan2 floor ceil round(x, digits) sign min max avg sum hypot clamp(x, lo, hi) if(cond, a, b)` |
 | Konstanter | `pi e true false`. Boolske verdier teller som 1 og 0; vinkler er i radianer |
@@ -712,7 +716,7 @@ En *boolean*-beregning er en betingelse, for eksempel "kjører i fart med sensor
 sensor 2 av":
 
 ```
-${kv}.speedAct > 5000 && ${kv}.bit01 && ${kv}.bit03 && !${kv}.bit02
+${kv}.reals_0 > 900 && ${kv}.bit01 && ${kv}.bit03 && !${kv}.bit02
 ```
 
 Bruk `if(condition, value, otherValue)` når du heller vil ha et tall ut.
@@ -820,8 +824,10 @@ reglene, som du lager på serveren.
   et tidsrom huben ikke husker. Er serveren borte, viser de hubens minne og
   *History: the central server can’t be reached*.
 
-**Oppsettet** er en JSON-fil som recorderen bare leser: `/etc/hmi-recorder.json`, eller
-`--config <fil>`. [config/recorder.example.json](config/recorder.example.json) viser alt:
+**Oppsettet** er en JSON-fil som recorderen bare leser: `/etc/kjoreverk/recorder.json`, eller
+`--config <fil>`. `install.sh` skriver den med serverens adresse og nøkkelen (`--server` og
+`--token`). En Pi som ble satt opp før, kan ha den i `/etc/hmi-recorder.json`; den leses hvis
+den nye ikke finnes. [config/recorder.example.json](config/recorder.example.json) viser alt:
 
 ```json
 { "server": "http://dbserver:8090", "token": "nøkkelen fra serveren", "queueMB": 64 }
@@ -837,8 +843,8 @@ reglene, som du lager på serveren.
 | `clockCheck` | `true` | `false`: stol på klokka uten å spørre systemet |
 | `hub` | `ws://localhost:8080` | Huben |
 
-Legg filen i `/etc`, ikke i `config/`: nøkkelen hører ikke hjemme i git. Gjør den lesbar bare
-for brukeren tjenesten kjører som (`sudo chmod 640`, og `chown root:<bruker>`).
+Filen ligger i `/etc`, ikke i `config/`: nøkkelen hører ikke hjemme i git. `install.sh` gjør
+den lesbar bare for brukeren tjenesten kjører som (`chmod 640` og `chown root:<bruker>`).
 
 **Statusen** står i taggene `rec.*`, som du kan vise i HMI-en:
 
@@ -855,7 +861,8 @@ for brukeren tjenesten kjører som (`sudo chmod 640`, og `chown root:<bruker>`).
 Recorderen skriver også i hendelsesloggen: når serveren er borte og tilbake, når reglene
 endres, når en pause begynner og slutter, når klokka hopper, og når køen er full.
 
-For å starte den som en tjeneste, se `README_systemd-service.md` ved siden av `hmi-core`.
+`install.sh` setter den opp som en tjeneste (`kjoreverk@recorder.service`) når den får
+serverens adresse. Se `README_systemd-service.md` ved siden av `hmi-core`.
 
 ---
 
@@ -1039,13 +1046,10 @@ renderer.setAnimationLoop(() => { /* les innganger, oppdater, render */ });
 3. Render inn i `hmi.container`, eller slett ditt eget oppsett av scene, kamera, lys og løkke,
    og bruk `hmi.stage()`.
 
-`config/assets/plane.js` viser dette: den opprinnelige flykoden står uendret mellom to
-markørkommentarer.
-
 **Enheter og fortegn:** inngangene kommer i taggens enheter. Konverter i kodesnutten
-(`THREE.MathUtils.degToRad`) eller lag en beregnet tag. Luftfartskonvensjonen (positiv roll =
-høyre vinge ned, positiv yaw = nesen mot høyre) er motsatt av Three.js sin rotasjonsretning
-rundt Z og Y, og derfor snur `plane.js` fortegnet på de to.
+(`THREE.MathUtils.degToRad`) eller lag en beregnet tag. Sjekk også retningen: Three.js roterer
+mot klokka sett fra den positive enden av aksen, så en vinkel med motsatt konvensjon må få
+snudd fortegnet.
 
 ### Kobling og redigering
 
@@ -1081,14 +1085,10 @@ Hver animasjon kjører i sin egen ramme i en sandkasse (sandbox):
 
 ## 11. Forbindelsen til PLS-en
 
-En adapter står mellom huben og PLS-en. Hvilken, avhenger av blokken PLS-en kjører:
-
-| Blokken i PLS-en | Adapteren | Navnene på taggene kommer fra |
-|---|---|---|
-| **TcpLink** (format 7) | `tcplink-adapter.js` | PLS-en (`LinkNames`), ved hver tilkobling. Ingen layoutfil. Se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en) |
-| **KjoreverkLink** v0.8 (fast blokk på 112 byte) | `binary-adapter.js` | Layoutfilen. Se [Pakket binærdata](#pakket-binærdata) |
-
-Bare én av dem om gangen: PLS-en tar imot én klient per port.
+`tcplink-adapter.js` står mellom huben og PLS-en, som kjører TcpLink-blokken (format 7).
+Navnene på taggene kommer fra PLS-en (`LinkNames`) ved hver tilkobling, så den trenger ingen
+layoutfil. Se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en).
+PLS-en tar imot én klient per port.
 
 Mot huben er adapteren en adapter som alle andre (WebSocket og JSON, se
 [12.1](#121-websocket-protokoll)); mot PLS-en snakker den TCP:
@@ -1109,26 +1109,30 @@ er borte, viser huben taggene som foreldet (stale).
 Alle kjøreverkene har det samme PLS-programmet, så taggene heter det samme i alle: `pls.bit03`,
 `pls.words_0`. Det samme prosjektet, de samme reglene og de samme søkene virker da overalt.
 Det som skiller kjøreverkene, er **kjøreverkets navn**, for eksempel `kv_52`. Det står på én
-linje i `/etc/kjoreverk/vehicle` på hver Pi, og skrives én gang når Pi-en settes opp:
+linje i `/etc/kjoreverk/vehicle` på hver Pi, og skrives én gang når Pi-en settes opp.
+`install.sh` spør etter det, eller får det med `--vehicle`:
 
 ```bash
-echo kv_52 | sudo tee /etc/kjoreverk/vehicle
+sudo bash /opt/kjoreverk/install.sh --vehicle kv_52
 ```
+
+For hånd er det `echo kv_52 | sudo tee /etc/kjoreverk/vehicle`.
 
 | Hvem | Bruker navnet til |
 |---|---|
-| `tcplink-adapter.js` og `binary-adapter.js` | navnet i huben: kilden i alarmlisten og hendelsesloggen (*kv_52 Drive fault F60209*) |
+| `tcplink-adapter.js` | navnet i huben: kilden i alarmlisten og hendelsesloggen (*kv_52 Drive fault F60209*) |
 | `hub.js` | kilden for alarmene og hendelsene fra beregningene |
 | `recorder.js` | kjøreverkets id på den sentrale serveren |
 
 - **Navnet:** en bokstav først, så bokstaver, sifre, `_`, `.` og `-`, høyst 32 tegn.
 - **Uten filen** er kilden tagprefikset (`pls`) og beregningens tag, og recorderen bruker
   vertsnavnet.
-- **Overstyre for én kjøring:** `--name=kv_52` på adapterne, `--vehicle kv_52` på recorderen.
+- **Overstyre for én kjøring:** `--name=kv_52` på `tcplink-adapter.js`, `--vehicle kv_52` på
+  recorderen.
 - **Tagprefikset** (`"device": "pls"` i innstillingsfilen) er det samme i alle kjøreverkene, og
   prosjektvariabelen `kv` er det samme: `kv=pls`.
-- Tjenestene leser filen når de starter: `sudo systemctl restart 'kjoreverk@*'` etter en
-  endring.
+- Tjenestene leser filen når de starter. `install.sh` starter dem på nytt selv; endrer du filen
+  for hånd, kjør `sudo systemctl restart 'kjoreverk@*'`.
 
 ### TcpLink: navnene kommer fra PLS-en
 
@@ -1218,22 +1222,6 @@ og ved hver endring, og verdier begrenses til typen sin. Stopper adapteren, null
 PLS-en alt i `rx` etter 2 s (`rxTimeout`). Kommer det ingenting fra PLS-en på 3 s, blir
 `pls.link` false og taggene foreldet; etter 10 s kobler adapteren til på nytt.
 
-**Fra KjoreverkLink til TcpLink.** Tilordningen i avsnitt 9 i `TCP_LINK.md` beholder bits,
-ints og dints på de samme indeksene, så `pls.bit06`, `pls.ints_1` og `pls.dints_0`
-betyr det samme som før. Dette flytter seg:
-
-| Før (`binary-adapter.js`) | Nå (`tcplink-adapter.js`) |
-|---|---|
-| `pls.speedAct` (16#4000 = p2000), skalert i `calc.kv_speed_rpm` | `pls.reals_0`, allerede i rpm |
-| `pls.torqueAct` (16#4000 = p2003), skalert i `calc.kv_torque_nm` | `pls.reals_1`, allerede i Nm |
-| `pls.faultCode`, `warnCode`, `statusWord` | `pls.words_0`, `words_1`, `words_2` |
-| `pls.words_0` … `words_3` | `pls.words_4` … `words_7` |
-| `pls.lastDriveTime`, `lastDriveTime_age` | `pls.times_0`, `times_0_age` |
-
-Beregninger og skjermbilder som bruker taggene i venstre kolonne, må endres. ZSW1-bitene
-(`pls.zsw1_enabled` …) heter det samme, fra innstillingsfilen. Stopp `binary-adapter.js`
-før du starter `tcplink-adapter.js`: PLS-en tar imot én klient.
-
 ### Historikken fra PLS-en
 
 ![Historikken fra PLS-en: LinkHistory og TcpLink, tcplink-adapter.js, huben og HMI-en](docs/tcplink-history.svg)
@@ -1278,195 +1266,6 @@ Adapterloggen viser hva PLS-en har ved hver tilkobling:
   og hendelsesloggen bygges ikke opp igjen av historikken, og beregnede tagger (`calc.*`) får
   ingen historikk tilbake.
 
-### Pakket binærdata
-
-`binary-adapter.js` gjør posisjonsbaserte binærdata om til navngitte tagger: posisjonen til en
-verdi i blokken sier hva den er, og en **layoutfil** gir hver posisjon et navn. Med PLS-en
-brukes modusen `fixed`: blokker med fast lengde fra TSEND_C / TRCV_C, tall i big-endian (som
-i S7) og Bools pakket åtte per byte.
-
-Adapteren er kjerne; layoutfilen hører til prosjektet. En endring i DB-ene i PLS-en trenger en
-endring i layouten, aldri en endring i adapteren.
-
-```bash
-node adapters/binary-adapter.js <layout.json> [ws://hub:8080]
-node adapters/binary-adapter.js            # uten argumenter: adapters/binary-layouts/kjoreverk-layout.json og ws://localhost:8080
-node adapters/binary-adapter.js <layout.json> --map        # skriv ut offset og tagnavn for hvert felt, og avslutt
-node adapters/binary-adapter.js <layout.json> --dump       # logg hver blokk i hex mens den kjører
-node adapters/binary-adapter.js <layout.json> --plc=192.168.0.1:2000   # koble til PLS-en der (overstyrer layouten)
-node adapters/binary-adapter.js <layout.json> --plc=2000   # vent i stedet på PLS-en på denne porten
-node adapters/binary-adapter.js <layout.json> --commands   # send kommandoer selv om layouten har toPlc.enabled = false
-```
-
-#### Faste blokker: S7-PLS-er (Open User Communication)
-
-PLS-en sender én blokk med fast lengde (`fromPlc`); adapteren sender én blokk tilbake
-(`toPlc`). Hvert felt blir en tag med navnet `<device>.<name>`.
-
-```json
-{
-  "mode": "fixed",
-  "device": "pls",
-  "byteOrder": "big",
-  "bitOrder": "lsb0",
-  "listen": 2000,
-  "timeoutMs": 3000,
-  "fromPlc": {
-    "length": 112,
-    "fields": [
-      { "name": "bit{i:2}",   "type": "Bool", "offset": "6.0",  "count": 64 },
-      { "name": "speedAct",   "type": "Int",  "offset": "14.0" },
-      { "name": "faultCode",  "type": "Word", "offset": "18.0", "event": "alarm", "text": "Drive fault F{value}" },
-      { "name": "statusWord", "type": "Word", "offset": "22.0", "bits": { "0": "zsw1_ready_on", "3": "zsw1_fault" } },
-      { "name": "lastDriveTime", "type": "DTL", "offset": "68.0", "age": true }
-    ]
-  },
-  "toPlc": {
-    "length": 46,
-    "enabled": true,
-    "sendEveryMs": 1000,
-    "fixed": [ { "type": "Word", "offset": "0.0", "value": "16#4B56" } ],
-    "fields": [
-      { "name": "cmd_bit00", "type": "Bool", "offset": "6.0" },
-      { "name": "cmd_bit01", "type": "Bool", "offset": "6.1", "autoReset": 500 },
-      { "name": "cmd_bit{i:2}", "type": "Bool", "offset": "6.2", "count": 62, "start": 2 },
-      { "name": "cmd_ints_{i}", "type": "Int", "offset": "14.0", "count": 12 }
-    ]
-  }
-}
-```
-
-**Toppnivå**
-
-| Nøkkel | Betydning |
-|---|---|
-| `device` | Tagprefiks |
-| `byteOrder` | `big` for S7 (standard) eller `little` |
-| `bitOrder` | `lsb0`: `x.0` er den minst signifikante biten, som i S7 (standard); eller `msb0` |
-| `listen` | TCP-port der adapteren venter på PLS-en (PLS-en er aktiv; standard 2000) |
-| `connect` | `"<plc-ip>:<port>"` i stedet for `listen` når PLS-en er passiv |
-| `reconnectMs` | Med `connect`: tid mellom tilkoblingsforsøk (standard 1000) |
-| `timeoutMs` | Kommer det ingen blokk fra PLS-en på så lang tid, blir verdiene foreldet (stale), og det kommer en advarsel. Sett den til omtrent tre av PLS-ens hjerteslag (heartbeats) |
-| `onReconnect` | Når PLS-en kobler til igjen: `clearBits` (standard) slår først av alle kommando-Bools; `keep` sender siste blokk på nytt |
-| `onHubLoss` | Når forbindelsen til huben faller ut: `clearBits` (standard) slår av kommando-Bools; `keep` lar dem stå |
-
-**Felter**
-
-| Nøkkel | Betydning |
-|---|---|
-| `name` | Tagnavn. Med `count` er `{i}` indeksen, og `{i:2}` fyller den ut til to sifre (`bit07`); `start` setter første indeks; `names: [...]` gir individuelle navn |
-| `type` | `Bool` `Byte` `Char` `SInt` `USInt` `Int` `UInt` `Word` `DInt` `UDInt` `DWord` `Real` `LReal` `DTL` |
-| `offset` | `"byte.bit"`, nøyaktig som i **Offset**-kolonnen for en DB med *Optimized block access* slått av. Andre typer enn Bool starter på `.0` |
-| `count` | Gjenta for en array: Bools går én bit videre, andre typer ett element |
-| `unit`, `description` | Vises i HMI-en |
-| `bits` | For heltallstyper: publiser enkeltbiter som Bool-tagger, `{ "3": "fault" }`. Bit 0 er den minst signifikante biten i verdien, uansett byte-rekkefølge |
-| `event`, `text` | `warning` eller `alarm`: feltet er en [alarm](#alarmer-og-kvittering), på mens verdien er true eller ulik null. `info`: en hendelse når verdien blir true eller ulik null, og "cleared" når den går tilbake. `{value}` i teksten erstattes. Virker også inne i `bits`: `{ "3": { "name": "fault", "event": "alarm" } }`. Alle andre verdier avvises når layouten lastes |
-| `codes` | Med en alarm på et kodefelt: en [kodetekst](#kodetekster-feilkoder-og-alarmkoder)-liste der teksten legges til alarmen, f.eks. `"codes": "v90-faults"` for *Drive fault F7900: Motor blocked* |
-| `age` | For DTL: publiser også `<name>_age`, sekunder siden det tidspunktet. Etter klokka på denne datamaskinen, eller med `ageFrom` etter en annen DTL i samme blokk (f.eks. PLS-ens sendetid), så de to klokkene aldri trenger å stemme overens |
-| `clock` | For DTL: `utc` hvis PLS-en skriver UTC (RD_SYS_T). Vises i lokal tid på denne datamaskinen |
-| `autoReset` | For `toPlc`-felter: slå av igjen så mange ms etter at feltet ble satt. For handlingsbiter (start, reset) med en PLS som reagerer på stigende flanke |
-| `hold` | For `toPlc`-Bools: hold-for-å-kjøre (hold-to-run). Biten faller så mange ms etter at siste trykk kom fram, og må deretter slippes før den kan trykkes igjen. Kombiner med *Repeat while held* på HMI-knappen (f.eks. `hold` 600, repeat 200) |
-| `default` | For `toPlc`-felter: verdien før HMI-en har satt en |
-
-`fromPlc.check` og `toPlc.fixed` inneholder header-konstanter som ikke er tagger:
-
-- **`check`** er det PLS-en må sende. En blokk som ikke stemmer, avvises, og adapteren leter
-  byte for byte etter neste gyldige header. En `"auto": "counter"`-oppføring er et
-  sekvensnummer: hopp telles i taggen `<device>.rx_gaps`.
-- **`fixed`** er det PLS-en forventer fra adapteren.
-
-Begge kan bruke `"value"` (et tall, eller `"16#A5"`), `"auto": "length"` eller
-`"auto": "counter"`.
-
-**Innstillinger for enkeltfelter** legges i `overrides`, med feltnavnet som nøkkel, uten at du
-må dele opp arrayen de hører til. En override kan sette `name`, `unit`, `description`,
-`default`, `autoReset`, `hold`, `event`, `text` og `codes`:
-
-```json
-"toPlc": {
-  "overrides": {
-    "cmd_bit03": { "name": "jog_fwd", "hold": 600 },
-    "cmd_bit05": { "name": "reset", "autoReset": 400 }
-  }
-}
-```
-
-**Én layout kan bygge på en annen** med `"extends": "other.json"`. Filen sier da bare det som
-er forskjellig; `fromPlc`, `toPlc` og deres `overrides` slås sammen. En PLS nummer to med
-samme PLS-program på den samme huben trenger for eksempel bare dette:
-
-```json
-{ "extends": "kjoreverk-layout.json", "device": "pls2", "connect": "10.0.123.52:2000" }
-```
-
-**Oppførsel**
-
-- **Uendrede verdier sendes ikke på nytt.** Bare endrede verdier går til huben, pluss alt én
-  gang i sekundet, så trender alltid har ett punkt per sekund.
-- **`<device>.link`** er true mens blokkene kommer. Når PLS-en er stille i `timeoutMs` eller
-  kobler fra, blir alle verdiene dens foreldet (stale), og alarmen *No data from the PLC*
-  følger 2 s senere. Loggen sier hvorfor.
-- **Skrivinger kontrolleres:** de begrenses til typens område (med en advarsel), og avvises
-  når sending er slått av, PLS-en ikke er tilkoblet, eller taggen er en som PLS-en sender.
-  Ekkoet er verdien som nå står i kommandoblokken, så ved en avvist skriving hopper
-  betjeningselementet tilbake.
-- **Når kommandoblokken sendes:** etter en endring, og hvert `sendEveryMs`.
-- **Trygge standardvalg:** reglene for ny tilkobling og tapt hub-forbindelse ovenfor slår av
-  kommando-Bools. Settpunkter beholdes.
-
-**Igangkjøring med en ekte PLS**
-
-1. Slå av *Optimized block access* for DB-ene du sender og mottar, så TIA viser
-   **Offset**-kolonnen. Kopier disse offsetene inn i layouten.
-2. Kjør med `--map` og sammenlign offsetene med TIA linje for linje.
-3. Kjør med `--dump`. Adapteren logger størrelsen på den første TCP-biten og hver blokk i
-   hex. Sjekk lengden og noen kjente verdier: en Bool du slår om i PLS-en, en Int du
-   setter til 1000 (`03 e8`).
-4. Først da setter du `toPlc.enabled` til true. Inntil header og offsets er bekreftet, sender
-   adapteren ikke noe den ikke kan gå god for.
-
-Trygge standardvalg, hold-for-å-kjøre og PLS-ens egen rolle er beskrevet i [13](#13-sikkerhet).
-
-![S7-1200 over Open User Communication: KjoreverkLink, binary-adapter.js, huben og HMI-en](docs/plc-ouc.svg)
-
-**Kjoreverk-layouten** (`adapters/binary-layouts/kjoreverk-layout.json`) passer til `KjoreverkLink` v0.8:
-uplink-format 5 (112 byte, magic 16#A5) og downlink-format 1 (46 byte, magic 16#5A).
-
-- **PLS-en er passiv** og lytter på port 2000, så sett `connect` til IP-adressen dens (eller
-  bruk `--plc=<ip>:2000`).
-- **Kommandoblokken gjentas hvert 500 ms,** godt innenfor FB-ens `cmdTimeout` på 2 s.
-- **Ingen bit har hold-for-å-kjøre ennå.** En bit som kjører noe bare mens den holdes (jogg,
-  krypkjøring), trenger `"hold": 600` i `toPlc.overrides`, og HMI-knappen
-  *Repeat while held* = 200 ms. Uten det kan biten bli stående på hvis nettleseren fryser midt
-  i et trykk, fordi adapteren fortsetter å sende kommandoblokken (se
-  [13](#hold-for-å-kjøre-over-et-nettverk)).
-- **"Standing still for"** (`lastDriveTime_age`, tid i ro) måles mot PLS-ens egen sendetid
-  `ts`, så PC-klokka spiller ingen rolle. Logikken din må skrive `lastDriveTime` med samme
-  klokke som FB-en (RD_SYS_T, UTC, med mindre `useLocalTime` er satt).
-
-Hastighet og moment kommer som normaliserte tall: 16#4000 = p2000 for hastighet, 16#4000 =
-p2003 for moment. Beregningene i prosjektet er satt opp for TcpLink, som sender dem i rpm og
-Nm. Med KjoreverkLink skriver du `calc.kv_speed_rpm` og `calc.kv_torque_nm` om til
-`${kv}.speedAct / 16384 * 3000` og `${kv}.torqueAct / 16384 * 1.0`, med p2000 og p2003 fra
-drivet ditt. `calc.kv_power_w` og de andre bruker disse to og trenger ingen endring.
-
-### Andre enheter og programmer
-
-Skal noe annet enn PLS-en vise verdier i HMI-en eller ta imot kommandoer fra den, kobler det
-seg til huben som en egen adapter, med sitt eget tagprefiks. Det snakker da hubens
-JSON-protokoll over WebSocket ([12.1](#121-websocket-protokoll)), akkurat som
-`binary-adapter.js`. Fire maler ligger klare i `adapters/example-adapters/`:
-
-| Mappe | For |
-|---|---|
-| `esp32-json/` | En ESP32 med Wi-Fi: adapteren ligger i sketchen (Arduino, WebSockets og ArduinoJson) |
-| `pico-micropython/` | En Raspberry Pi Pico W eller Pico 2 W med MicroPython, uten biblioteker |
-| `python/` | Et Python-program på en annen maskin: `hub_adapter.py` flettes inn i programmet, uten pakker |
-| `node/` | Et Node.js-program på en annen maskin: `hub-adapter.js`, uten pakker på Node 22+ |
-
-[adapters/example-adapters/README.md](adapters/example-adapters/README.md) forklarer hver av
-dem, hvordan du fletter en adapter inn i ditt eget program, og meldingene, med to kart.
-
 ---
 
 ## 12. Referanse
@@ -1474,26 +1273,25 @@ dem, hvordan du fletter en adapter inn i ditt eget program, og meldingene, med t
 ### 12.1 WebSocket-protokoll
 
 JSON-tekstrammer over én WebSocket (`ws://<hub>:8080`). Adaptere og HMI-er bruker samme type
-forbindelse; `hello` sier hvilken av dem det er. Eksempeladapterne i
-`adapters/example-adapters/` viser protokollen i bruk.
+forbindelse; `hello` sier hvilken av dem det er.
 
 **Klient → hub**
 
 | Melding | Fra | Formål |
 |---|---|---|
-| `{"type":"hello","role":"adapter"\|"hmi","name":"kv_52"}` | begge | Identifiser seg. For en adapter er `name` kilden i alarmlisten og hendelsesloggen: tagprefikset, eller kjøreverkets navn for PLS-adapterne |
-| `{"type":"register","tags":[{"name":"pls.speedAct","dataType":"number","unit":"","writable":false,"description":"..."}]}` | adapter | Deklarer tagger. Valgfritt: ukjente tagger opprettes ved første oppdatering. En tag kan ha med `"alarm": {"severity","text","when","delay","codes"}`; `binary-adapter.js` lager det ut fra `event`-feltene i layouten. `"label"` er enhetens eget navn på taggen (`tcplink-adapter.js`: navnet fra PLS-en); huben viser det når du ikke har gitt taggen ditt eget |
-| `{"type":"update","tag":"pls.speedAct","value":4096}` | adapter | Én verdi |
-| `{"type":"update","values":{"pls.speedAct":4096,"pls.bit05":true}}` | adapter | Flere verdier samtidig |
+| `{"type":"hello","role":"adapter"\|"hmi","name":"kv_52"}` | begge | Identifiser seg. For en adapter er `name` kilden i alarmlisten og hendelsesloggen. `tcplink-adapter.js` bruker kjøreverkets navn, eller tagprefikset uten det |
+| `{"type":"register","tags":[{"name":"pls.reals_0","dataType":"number","unit":"rpm","writable":false,"description":"..."}]}` | adapter | Deklarer tagger. Valgfritt: ukjente tagger opprettes ved første oppdatering. En tag kan ha med `"alarm": {"severity","text","when","delay","codes"}`; `tcplink-adapter.js` lager det ut fra `"tags"` i innstillingsfilen. `"label"` er enhetens eget navn på taggen (`tcplink-adapter.js`: navnet fra PLS-en); huben viser det når du ikke har gitt taggen ditt eget |
+| `{"type":"update","tag":"pls.reals_0","value":1450.2}` | adapter | Én verdi |
+| `{"type":"update","values":{"pls.reals_0":1450.2,"pls.bit05":true}}` | adapter | Flere verdier samtidig |
 | `{"type":"event","severity":"info"\|"warning"\|"alarm","message":"text"}` | adapter | En melding eller alarm til HMI-ene |
 | `{"type":"restore","origin":"the PLC history","series":{"pls.bit03":[[ts,true,"812@…"],...]}}` | adapter | Eldre punkter fra enheten selv, til historikken; verdien nå endres ikke. Det tredje feltet er valgfritt og sier hvilken post punktet kommer fra, så det samme sendt på nytt hoppes over. Se [Historikken fra PLS-en](#historikken-fra-pls-en) |
 | `{"type":"subscribe","tags":["pls.*","*"]}` | hmi | Motta oppdateringer. Gjeldende verdier sendes med en gang |
 | `{"type":"unsubscribe","tags":[...]}` | hmi | Slutt å motta dem |
 | `{"type":"write","tag":"pls.cmd_bit00","value":true}` | hmi | Be adapteren som eier taggen, om å endre noe |
-| `{"type":"ack","keys":["tag:pls.faultCode"]}` eller `{"type":"ack","all":true}` | hmi | Kvitter alarmer (ikke fra skrivebeskyttede HMI-er) |
+| `{"type":"ack","keys":["tag:pls.words_0"]}` eller `{"type":"ack","all":true}` | hmi | Kvitter alarmer (ikke fra skrivebeskyttede HMI-er) |
 | `{"type":"historyRange","id":1,"tags":[...],"from":ms,"to":ms,"points":800}` | hmi | Punkter for et tidsrom, til en trend: fra hubens minne, eller sendt videre til en database (`query`) |
 | `{"type":"queryResult","id","series","unrecorded"}` | adapter med `serves` | Svaret på en `query`. `unrecorded`: tagger databasen ikke har |
-| `{"type":"history","tag":"pls.speedAct"}` | hmi | De siste 600 endringene |
+| `{"type":"history","tag":"pls.reals_0"}` | hmi | De siste 600 endringene |
 | `{"type":"checkCalc","id":1,"formula":"...","vars":{}}` | hmi | Sjekk en formel. Svaret er `calcCheck` |
 | `{"type":"list"}` / `{"type":"ping"}` | begge | Tagliste / keep-alive |
 
@@ -1605,16 +1403,21 @@ node hub.js [port] [project file]
 
 ```bash
 node adapters/tcplink-adapter.js [options.json] [ws://hub:8080] [--plc=ip:port] [--device=pls] [--name=kv_52] [--no-commands] [--dump]
-node adapters/binary-adapter.js [layout.json] [ws://hub:8080] [--plc=ip:port] [--name=kv_52] [--map] [--dump] [--commands]
 ```
 
 ```bash
-node recorder.js [--config /etc/hmi-recorder.json] [ws://hub:8080] [--vehicle kv_52] [--server http://dbserver:8090] [--token ...] [--queue-mb 64]
+node recorder.js [--config /etc/kjoreverk/recorder.json] [ws://hub:8080] [--vehicle kv_52] [--server http://dbserver:8090] [--token ...] [--queue-mb 64]
 ```
 
-Uten `ws://...` kobler adapterne og recorderen til `HUB_URL`, eller `ws://localhost:8080`.
+Uten `ws://...` kobler adapteren og recorderen til `HUB_URL`, eller `ws://localhost:8080`.
 Bruken står også øverst i hver fil. Innstillingene til recorderen står i
 [Recorderen](#recorderen-til-den-sentrale-serveren).
+
+Installasjonsskriptet i mappen over `hmi-core` (alle valgene står i `README_systemd-service.md`):
+
+```bash
+sudo bash install.sh [--vehicle kv_52] [--plc ip:port] [--server http://dbserver:8090] [--token ...] [--no-recorder] [--user pi] [--ntp 10.0.0.104] [--disk-logs] [--yes]
+```
 
 ---
 
@@ -1644,12 +1447,11 @@ kan ikke merke det, fordi adapteren holder forbindelsen sin i live. Tre ledd tet
    hvert 200 ms. Mister vinduet fokus, skjules fanen eller forlater du siden, slippes alle
    holdte knapper med en gang.
 2. **Adapteren slipper biten når gjentakelsene stopper.** Sett `"hold": 600` for den biten i
-   innstillingsfilen (`tcplink-adapter.js`) eller layouten (`binary-adapter.js`). Når biten
-   har falt, forblir den av til HMI-en sender et slipp, så trykk som ligger bufret i en død
-   forbindelse, ikke kan starte noe på nytt når de til slutt kommer fram. En
-   advarselshendelse sier hva som skjedde.
+   innstillingsfilen til `tcplink-adapter.js`. Når biten har falt, forblir den av til HMI-en
+   sender et slipp, så trykk som ligger bufret i en død forbindelse, ikke kan starte noe på
+   nytt når de til slutt kommer fram. En advarselshendelse sier hva som skjedde.
 3. **PLS-en stopper av seg selv når adapteren blir stille.** `TcpLink` nullstiller alt i `rx`
-   etter `rxTimeout` (2 s), og `KjoreverkLink` alle kommandoer etter sin `cmdTimeout`.
+   etter `rxTimeout` (2 s).
 
 Testet fra ende til ende mot en PLS-simulator under utviklingen: en side som frøs midt i et
 trykk, stoppet joggingen omtrent 600 ms etter siste trykk. Da den frosne siden våknet igjen, startet den ikke joggingen
@@ -1674,7 +1476,7 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | En widget er grå og sier *stale* | Adapteren som eier taggen, er koblet fra, eller en inngang til en beregning er foreldet |
 | Et betjeningselement gjør ingenting | Adapteren sendte ikke ekko på skrivingen, taggen er ikke skrivbar, eller adapteren er frakoblet. Hubens logg viser `[write]`-linjer |
 | `pls.link` er false, og alarmen *No data from the PLC* står | Adapteren når ikke PLS-en: sjekk IP-adressen i `"connect"` (eller `--plc`), kabelen, at PLS-en er i RUN, og at FB-en lytter på port 2000. Adapterens logg sier om tilkoblingen feiler eller om blokkene avvises (feil header eller lengde: kjør med `--dump`) |
-| En kommando fra HMI-en kommer ikke fram til PLS-en | Adapterens logg sier hvorfor skrivingen ble avvist: `toPlc.enabled` er false (TcpLink: `"commands": false` eller `--no-commands`), PLS-en er ikke tilkoblet, eller taggen er en PLS-en sender (bare `cmd_*` kan skrives) |
+| En kommando fra HMI-en kommer ikke fram til PLS-en | Adapterens logg sier hvorfor skrivingen ble avvist: kommandoene er slått av (`"commands": false` i innstillingsfilen, eller `--no-commands`), PLS-en er ikke tilkoblet, eller taggen er en PLS-en sender (bare `cmd_*` kan skrives) |
 | Taggene fra TcpLink har bare plassnavn (`pls.reals_0`), uten navn | Navnemeldingen har ikke kommet: loggen sier `no names from the PLC yet`. Les `namesStatus` i instans-DB-en til TcpLink (2: for mange navn for én melding, 3: en strenglengde er et oddetall), og sjekk at `names` er koblet til `LinkNames` |
 | Et nytt navn i PLS-en vises ikke i HMI-en | Navnene sendes ved tilkobling: gi `resendNames` en stigende flanke, eller start adapteren på nytt. Har du gitt taggen ditt eget navn, går det foran: tøm det i tagoversikten |
 | Andre maskiner når ikke HMI-en | Brannmuren på Pi-en (eller PC-en) blokkerer port 8080. Windows spør første gang `node` lytter på en port, så tillat private nettverk |
@@ -1683,7 +1485,7 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | "three.js is not installed" | Kjør `npm install` i `hmi-core` |
 | En trend viser bare de siste minuttene | Huben har de siste 600 endringene av hver tag i minnet, og ingen database er koblet til. For en måling som endrer seg hele tiden, er det noen minutter. Se [8](#8-lagring-til-database) |
 | En trend sier *History: the central server can’t be reached* | Recorderen når ikke serveren, så trenden viser hubens minne. `rec.server` sier det samme; recorderens logg sier hvorfor (`journalctl -u kjoreverk@recorder.service`) |
-| `rec.server` er `key refused` | Serveren kjenner ikke nøkkelen (`token`) i `/etc/hmi-recorder.json`, eller den er trukket tilbake. Lag en ny på serveren, og start recorderen på nytt. Den prøver ellers igjen hvert 5. minutt |
+| `rec.server` er `key refused` | Serveren kjenner ikke nøkkelen (`token`) i `/etc/kjoreverk/recorder.json`, eller den er trukket tilbake. Lag en ny på serveren, og kjør `sudo bash /opt/kjoreverk/install.sh --token <nøkkelen>`, som starter recorderen på nytt. Den prøver ellers igjen hvert 5. minutt |
 | `rec.clock_synced` er false, og ingenting sendes | Klokka er ikke synkronisert: `timedatectl` viser *System clock synchronized: no*. Sjekk `chrony` eller `systemd-timesyncd` mot tidsserveren `10.0.0.104`. Etter 10 minutter sendes verdiene likevel, merket. På en maskin uten `timedatectl` og `chronyc` regnes klokka som riktig |
 | `rec.dropped` øker | Køen var full: serveren har vært borte lenge, eller reglene lagrer mye. Serveren får vite om hullet. Øk `queueMB`, eller stram inn reglene |
 | En tidslinje er tom fram til et tidspunkt | Huben har ingen verdi for signalet før det: huben startet, eller adapteren koblet til, da. Det PLS-en har logget i ringbufferen, kommer tilbake (se [Historikken fra PLS-en](#historikken-fra-pls-en)); andre signaler starter når adapteren kobler til |
@@ -1698,6 +1500,9 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | `EADDRINUSE` når huben startes | Porten er opptatt av en annen hub. Velg en annen: `node hub.js 8081 ...` |
 | "The project couldn't be opened" | `hmi.json` er redigert for hånd og er ikke lenger gyldig JSON; meldingen sier hvor feilen er. Rett den og last inn på nytt. Lagring fra HMI-en spør først, og huben tar da vare på den gamle filen som `hmi.json.unreadable-<time>` |
 | `Cannot find module 'ws'` | `npm install` er ikke kjørt i `hmi-core`, eller `node_modules` ble ikke kopiert med (se [Installere uten internett](#installere-uten-internett-raspberry-pi)) |
+| `install.sh` sier `$'\r': command not found` | Filen har fått Windows-linjeskift, for eksempel fra en editor på Windows. Kjør `sed -i 's/\r$//' install.sh`. Git holder `*.sh` med Unix-linjeskift (`.gitattributes`) |
+| `Permission denied` når `./install.sh` kjøres | Filen har mistet kjørebiten, for eksempel på en minnepenn. Kjør den med `sudo bash install.sh` |
+| Tjenestene starter ikke etter at prosjektmappen er flyttet | Tjenesten peker fortsatt på den gamle mappen. Kjør `sudo bash install.sh` fra den nye mappen; den skriver tjenesten på nytt |
 
 ---
 
@@ -1708,9 +1513,9 @@ får nytte av — en ny widgettype, en ny koblingshandling — endrer du kjernen
 sted, og holder oversikt over endringen (git fungerer godt til det). Endringen gjelder da for
 alle prosjekter.
 
-**Hold serverfilene kompatible med Node 10.** `hub.js`, `lib/calc.js` og adapterne kjører på
-Pi-en, der Node kan være gammel. Unngå `??`, `?.` og annen syntaks som er nyere enn 2019, der.
-Nettleserfilene (`hmi/`) kjører i nettleseren og kan bruke alt som er moderne.
+**Hold serverfilene kompatible med Node 10.** `hub.js`, `recorder.js`, `lib/` og
+`tcplink-adapter.js` kjører på Pi-en, der Node kan være gammel. Unngå `??`, `?.` og annen
+syntaks som er nyere enn 2019, der. Nettleserfilene (`hmi/`) kjører i nettleseren og kan bruke alt som er moderne.
 
 **Å legge til en widgettype** er én blokk i `hmi/widgets.js`:
 

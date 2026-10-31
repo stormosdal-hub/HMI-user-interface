@@ -125,7 +125,7 @@
   //   H.hold(press, release, repeatMs) -> stop()   eller null hvis første trykk feilet
   //   press()   sender trykkverdien, returnerer false hvis den ikke kunne sendes
   //   repeatMs  > 0: send trykket på nytt så ofte mens det holdes, så adapteren kan droppe
-  //             kommandoen hvis gjentakelsene uteblir (se "hold" i layouten til binary-adapteren)
+  //             kommandoen hvis gjentakelsene uteblir (se "hold" i innstillingsfilen til tcplink-adapteren)
   const holds = new Set();
   const releaseAll = () => { for (const stop of [...holds]) stop(); };
   window.addEventListener('blur', releaseAll);
@@ -665,7 +665,7 @@
       { key: 'value', label: 'Value on press', type: 'text', default: 'true', hint: 'true, false, a number or text' },
       { key: 'releaseValue', label: 'Value on release', type: 'text', default: '', hint: 'Leave empty for a plain click' },
       { key: 'holdRepeatMs', label: 'Repeat while held (ms)', type: 'number', default: 0,
-        hint: 'Hold-to-run (jog): 200 sends the press every 200 ms while held, so the adapter can switch it off if they stop. Pair it with "hold" in the layout. 0 = off' },
+        hint: 'Hold-to-run (jog): 200 sends the press every 200 ms while held, so the adapter can switch it off if they stop. Pair it with "hold" in the adapter’s options file. 0 = off' },
       P.color('Pressed colour'),
       P.labelSize(), P.textSize('Button size', 'The button text; the button grows with it'),
       ...safetyProps('A question such as "Reset the drive fault?", asked before sending. With a value on release, OK sends a short press: the value, then the release value half a second later. Not for hold-to-run (repeat while held): that sends at once'),

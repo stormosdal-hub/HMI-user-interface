@@ -1,12 +1,12 @@
 {
   "name": "hmi-core",
   "version": "0.1.0",
-  "description": "Reusable browser HMI + tag hub. Bind widgets to tags, connect anything through small adapters.",
+  "description": "Browser HMI, tag hub and recorder for the kjøreverk: an S7-1200 with the TcpLink block and a Raspberry Pi.",
   "main": "hub.js",
   "scripts": {
     "start": "node hub.js",
-    "adapter": "node adapters/binary-adapter.js adapters/binary-layouts/kjoreverk-layout.json",
-    "tcplink": "node adapters/tcplink-adapter.js"
+    "tcplink": "node adapters/tcplink-adapter.js",
+    "recorder": "node recorder.js"
   },
   "dependencies": {
     "ws": "^8.18.0",

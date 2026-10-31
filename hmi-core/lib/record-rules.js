@@ -10,8 +10,8 @@
  *     "events": true, "eventsMin": "info",
  *     "rules": [
  *       { "tags": "${kv}.spare*", "mode": "ignore" },
- *       { "tags": "${kv}.speedAct, ${kv}.torqueAct", "deadband": "1%", "minInterval": 1, "maxInterval": 60 },
- *       { "tags": "${kv}.statusWord", "ignoreBits": "8, 10" },
+ *       { "tags": "${kv}.reals_0, ${kv}.reals_1", "deadband": "1%", "minInterval": 1, "maxInterval": 60 },
+ *       { "tags": "${kv}.words_2", "ignoreBits": "8, 10" },
  *       { "tags": "${kv}.ints_1", "mode": "interval", "every": 60 },
  *       { "tags": "${kv}.bit0*", "flickerChanges": 6, "flickerSeconds": 2 }
  *     ],

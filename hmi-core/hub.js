@@ -622,7 +622,7 @@ function thin(pts, from, to, n) {
 // ---------------------------------------------------------------- aktive alarmer
 // En alarm er en betingelse som er på eller av. Den kommer fra:
 //   tag    en tag som en adapter registrerte med  alarm: { severity, text, when, delay, codes }
-//          (layoutfiler for binary-adapter: felt med "event": "warning" eller "alarm")
+//          (tcplink-adapter: "event": "warning" eller "alarm" under "tags" i innstillingsfilen)
 //   calc   en beregning der hendelsen er en advarsel eller en alarm
 //   link   en adapter som koblet fra, til den kobler til igjen
 //   event  en advarsel eller alarmhendelse uten betingelse bak: står i listen til den er kvittert

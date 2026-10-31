@@ -17,11 +17,12 @@
  *   - sender ingenting før klokka er synkronisert, og flytter punktene i køen hvis klokka hopper
  *   - fyller hullet etter en omstart fra hubens minne
  *
- *   node recorder.js [--config /etc/hmi-recorder.json] [ws://localhost:8080]
+ *   node recorder.js [--config /etc/kjoreverk/recorder.json] [ws://localhost:8080]
  *
  * Oppsettet er en JSON-fil som bare leses (config/recorder.example.json viser alt):
  *   { "server": "http://dbserver:8090", "token": "...", "queueMB": 64, "sendSeconds": 10 }
- * Uten --config: /etc/hmi-recorder.json, ellers config/recorder.json. Kjøreverkets id er
+ * Uten --config: /etc/kjoreverk/recorder.json (install.sh skriver den), /etc/hmi-recorder.json på en
+ * Pi som ble satt opp før, ellers config/recorder.json. Kjøreverkets id er
  * kjøreverkets navn i /etc/kjoreverk/vehicle (det adapteren og huben også bruker), eller
  * vertsnavnet. "vehicle" i filen, --vehicle, --server, --token og --queue-mb overstyrer.
  *
@@ -50,9 +51,10 @@ const args = process.argv.slice(2);
 const opt = name => { const i = args.indexOf(name); return i >= 0 && i + 1 < args.length && !args[i + 1].startsWith('--') ? args[i + 1] : null; };
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
+const SETTINGS_DEFAULT = '/etc/kjoreverk/recorder.json';
 function readSettings() {
   const given = opt('--config') || process.env.HMI_RECORDER_CONFIG;
-  const files = given ? [given] : ['/etc/hmi-recorder.json', path.join(__dirname, 'config', 'recorder.json')];
+  const files = given ? [given] : [SETTINGS_DEFAULT, '/etc/hmi-recorder.json', path.join(__dirname, 'config', 'recorder.json')];
   for (const f of files) {
     if (!given && !fs.existsSync(f)) continue;
     try { return { file: f, s: JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, '')) }; }
@@ -68,7 +70,7 @@ const TOKEN = String(opt('--token') || settings.token || '').trim();
 const QUEUE_MB = Number(opt('--queue-mb') || settings.queueMB) > 0 ? Number(opt('--queue-mb') || settings.queueMB) : 64;
 const CLOCK_CHECK = settings.clockCheck !== false;   // false: stol på klokka uten å spørre systemet
 if (!/^https?:\/\/[^/]+/.test(SERVER)) {
-  console.error(`The recorder needs the central server's address, like "server": "http://dbserver:8090", in ${SETTINGS_FILE || '/etc/hmi-recorder.json'} (or --server).`);
+  console.error(`The recorder needs the central server's address, like "server": "http://dbserver:8090", in ${SETTINGS_FILE || SETTINGS_DEFAULT} (or --server).`);
   process.exit(1);
 }
 if (!TOKEN) log(`warning: no key ("token") for ${VEHICLE}; the server will refuse the data until one is set`);

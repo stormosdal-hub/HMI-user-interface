@@ -212,8 +212,8 @@ ville lagret.
   "eventsMin": "info",
   "rules": [
     { "tags": "pls.spare*", "mode": "ignore" },
-    { "tags": "pls.speedAct, pls.torqueAct", "deadband": "1%", "minInterval": 1, "maxInterval": 60 },
-    { "tags": "pls.statusWord", "ignoreBits": "8, 10" },
+    { "tags": "pls.reals_0, pls.reals_1", "deadband": "1%", "minInterval": 1, "maxInterval": 60 },
+    { "tags": "pls.words_2", "ignoreBits": "8, 10" },
     { "tags": "pls.ints_1", "mode": "interval", "every": 60 },
     { "tags": "pls.bit0*", "flickerChanges": 6, "flickerSeconds": 2 },
     { "tags": "*" }

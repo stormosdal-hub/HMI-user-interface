@@ -42,9 +42,9 @@ database kan lagre dem som en hvilken som helst annen tag.
 Tre typiske beregninger:
 
 ```
-calc.kv_speed_rpm   number    ${kv}.speedAct / 16384 * 3000
-calc.at_speed       boolean   ${kv}.speedAct > 5000 && ${kv}.zsw1_enabled && !${kv}.zsw1_fault
-calc.cable_fault    boolean   changes(${kv}.bit06, 2) >= 6          event: warning "Loose cable?"
+calc.kv_speed_rpm     number    ${kv}.reals_0
+calc.kv_power_w       number    calc.kv_torque_nm * calc.kv_speed_rpm * 2 * pi / 60
+calc.kv_cable_fault   boolean   changes(${kv}.bit06, 2) >= 6     event: warning "Sensor bit06 is flickering: loose cable?"
 ```
 
 ---
@@ -60,7 +60,7 @@ Hver beregning er et kort med disse feltene:
 | **Måleenhet** | Vises sammen med taggen, for eksempel i tagoversikten. Widgeter bruker sin egen innstilling for måleenhet. |
 | **Desimaler** | Hvor mange desimaler forhåndsvisningen i editoren viser. Widgeter har sin egen innstilling. |
 | **Formel** | Det som skal regnes ut. |
-| **Insert tag…** | Setter inn en tag ved markøren. Hvis en prosjektvariabel peker på enheten, settes den inn som `${kv}.speedAct`, slik at formelen følger variabelen. |
+| **Insert tag…** | Setter inn en tag ved markøren. Hvis en prosjektvariabel peker på enheten, settes den inn som `${kv}.reals_0`, slik at formelen følger variabelen. |
 | **Insert example…** | Erstatter formelen med et mønster å starte fra. Bytt ut `device.*`-navnene med dine egne tagger. |
 | **Note** (merknad) | Fritekst: hva dette er, og hvorfor. |
 | **When it becomes true** | Valgfri hendelse: *Info*, *Warning* eller *Alarm*, med tekst. Se [Hendelser](#9-hendelser). |
@@ -87,8 +87,8 @@ resultatet forblir foreldet (stale).
 
 | Form | Eksempel | Merknader |
 |---|---|---|
-| `device.name` | `pls.speedAct` | Et tagnavn med minst ett punktum. Delene etter den første kan begynne med et siffer: `pls.bit00`. |
-| `${variable}.name` | `${kv}.speedAct` | Prosjektvariabelen fylles inn før formelen leses (`kv=pls`). Endre variabelen, så følger formelen etter. |
+| `device.name` | `pls.reals_0` | Et tagnavn med minst ett punktum. Delene etter den første kan begynne med et siffer: `pls.bit00`. |
+| `${variable}.name` | `${kv}.reals_0` | Prosjektvariabelen fylles inn før formelen leses (`kv=pls`). Endre variabelen, så følger formelen etter. |
 | `calc.name` | `calc.kv_speed_rpm` | Resultatet av en annen beregning. |
 | `[any name]` | `[plc-2.motor-temp]` | Hakeparenteser for navn med `-` eller andre tegn. |
 
@@ -166,8 +166,9 @@ Verdt å vite:
 | `between(x, lo, hi)` | 1 når lo ≤ x ≤ hi, begge endepunktene inkludert |
 
 Det finnes ingen bitoperatorer. For å teste bit *n* i et ord, bruk `floor(x / 2^n) % 2 == 1`.
-For eksempel tester `floor(${kv}.statusWord / 8) % 2 == 1` bit 3. For statusord som en
-layoutfil allerede deler opp i navngitte biter, som `${kv}.zsw1_fault`, bruker du heller dem.
+For eksempel tester `floor(${kv}.words_2 / 8) % 2 == 1` bit 3. For statusord som
+innstillingsfilen til `tcplink-adapter.js` allerede deler opp i navngitte bits, som
+`${kv}.zsw1_fault`, bruker du heller dem.
 
 ---
 
@@ -190,19 +191,19 @@ enn 0, og ellers `false`.
 | En bestemt tilstand eller modus | `${kv}.ints_2 == 3` |
 | Enhver tilstand unntatt én | `${kv}.ints_2 != 0` |
 
-Betingelser kan kombineres fritt. For eksempel: kjører over 5000, sensor 1 og 3 på, sensor 2
-av, og ingen feil:
+Betingelser kan kombineres fritt. For eksempel: kjører over 900 rpm, sensor 1 og 3 på,
+sensor 2 av, og ingen feil:
 
 ```
-${kv}.speedAct > 5000 && ${kv}.bit01 && ${kv}.bit03 && !${kv}.bit02 && !${kv}.zsw1_fault
+${kv}.reals_0 > 900 && ${kv}.bit01 && ${kv}.bit03 && !${kv}.bit02 && !${kv}.zsw1_fault
 ```
 
 **En verdi i stedet for sann/usann:** velg typen *number* og velg verdien med `if()` eller
 `? :`.
 
 ```
-if(${kv}.speedAct > 5000 && ${kv}.bit01, 1, 0)                 1 når oppfylt, ellers 0
-${kv}.speedAct > 5000 ? 3 : ${kv}.speedAct > 1000 ? 2 : 1      et nivå fra 1 til 3
+if(${kv}.reals_0 > 900 && ${kv}.bit01, 1, 0)                  1 når oppfylt, ellers 0
+${kv}.reals_0 > 900 ? 3 : ${kv}.reals_0 > 200 ? 2 : 1          et nivå fra 1 til 3
 ```
 
 ---
@@ -351,8 +352,8 @@ I disse eksemplene er `${kv}` Kjoreverk-PLS-en (`kv=pls`). Bytt ut taggene med d
 ### Omregninger og avledede verdier
 
 ```
-Hastighet i rpm (16#4000 = p2000 = 3000 rpm)   ${kv}.speedAct / 16384 * 3000
-Moment i Nm (16#4000 = p2003 = 1.00 Nm)        ${kv}.torqueAct / 16384 * 1.0
+Hastighet i rpm (TcpLink sender den i rpm)     ${kv}.reals_0
+Et normalisert tall (16#4000 = p2000) i rpm    ${kv}.ints_0 / 16384 * 3000
 Akseleffekt i W                                calc.kv_torque_nm * calc.kv_speed_rpm * 2 * pi / 60
 Temperatur fra tideler av en grad              ${kv}.ints_1 / 10
 Virkningsgrad i %, tåler 0 som inndata         if(calc.power_in > 0, calc.power_out / calc.power_in * 100, 0)
@@ -436,7 +437,7 @@ Noen av disse trenger en forklaring:
 | *uses calc.x, which is not defined* | Formelen bruker en beregning som ikke finnes |
 | *calc.x is defined more than once* | To beregninger med samme navn |
 | *the name may only use letters, digits and _ (dots between parts)* | Et ugyldig navn |
-| *waiting for pls.speedAct* (en merknad, ikke en feil) | Den inngangen har ingen verdi ennå: enheten er ikke tilkoblet |
+| *waiting for pls.reals_0* (en merknad, ikke en feil) | Den inngangen har ingen verdi ennå: enheten er ikke tilkoblet |
 | *result is infinite (division by zero?)* | En divisjon med null; beskytt den med `if(b != 0, a / b, 0)` |
 | *result is not a number* | Som regel tekst som inndata, eller `sqrt` eller `log` av et negativt tall |
 

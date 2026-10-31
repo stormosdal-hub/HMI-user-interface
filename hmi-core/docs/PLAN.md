@@ -66,9 +66,9 @@ ikke starter.
 Ringen i PLS-en gir tilbake de siste digitale endringene (se [4](#4-etter-et-strømbrudd-eller-en-omstart)),
 og hullet synes på serveren ([3.6](#36-hull-blir-synlige)).
 
-**Recorderen er ikke den eneste som skriver.** Loggene (journald), `apt`, `fake-hwclock`, og
-huben når prosjektet lagres i Edit-modus, skriver også til kortet. Se
-[åpne spørsmål](#7-åpne-spørsmål) om overlay-filsystemet.
+**Recorderen er ikke den eneste som skriver.** `install.sh` legger loggene (journald) i RAM, men
+`apt`, `fake-hwclock`, og huben når prosjektet lagres i Edit-modus, skriver fortsatt til kortet.
+Se [åpne spørsmål](#7-åpne-spørsmål) om overlay-filsystemet.
 
 ### 3.2 En egen recorder på hver Pi
 
@@ -218,7 +218,7 @@ alle sine 600 endringer per tag, og hullet blir lite eller ingenting.
 |---|---|---|
 | `lib/record-rules.js` | Tilbake fra 4443ef8. Uten filhåndteringen, med reglene som JSON fra serveren, pauser i ms, `eventsMin`, og regler for punkter i etterkant | bygd |
 | `recorder.js` | De to forbindelsene til huben, reglene, køen i RAM, batcher til serveren, klokkehopp, hull fra hubens minne, svar på historikkspørsmål, status-taggene | bygd |
-| Installasjon | systemd-tjeneste, oppsettfilen (id, nøkkel, server), klokka mot tidsserveren. Beskrevet i `README_systemd-service.md` | bygd |
+| Installasjon | `install.sh` i prosjektmappen (`/opt/kjoreverk`): kjøreverkets navn, systemd-tjenestene, oppsettfilen (server, nøkkel), klokka mot tidsserveren og loggene i RAM. Beskrevet i `README_systemd-service.md` | bygd |
 | Test | En falsk server etter [PROTOKOLL.md](PROTOKOLL.md) og den falske PLS-en: køen, at en batch sendes på nytt og lagres én gang, brudd, 503, 400, 413, nye regler, pauser, stopp, klokkehopp, hull fra hubens minne og full kø | bygd |
 | README | Avsnittet om recorderen, kommandolinjen og rader under Feilsøking | bygd |
 | `hub.js`, adapteren, HMI-en | ingen endring | uendret |
@@ -248,7 +248,8 @@ Hver fase virker alene.
   - **Fordelen:** det beskytter kortet mot alle skrivinger, ikke bare recorderens.
   - **Ulempen:** endringer i HMI-prosjektet som lagres på Pi-en, er borte etter en omstart. For
     å endre noe, slås overlayet av og Pi-en startes på nytt.
-  - **Uten overlay:** legg i det minste loggene i RAM (`Storage=volatile` i journald).
+  - **Uten overlay** ligger i det minste loggene i RAM: `install.sh` setter `Storage=volatile` i
+    journald.
 
 ## 8. Begrensninger vi lever med
 

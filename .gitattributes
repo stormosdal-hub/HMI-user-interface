@@ -1,0 +1,2 @@
+# install.sh kjøres med bash på Pi-en: Windows-linjeskift ville stoppe den
+*.sh text eol=lf

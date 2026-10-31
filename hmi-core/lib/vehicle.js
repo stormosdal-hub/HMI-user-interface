@@ -1,12 +1,12 @@
 'use strict';
 /*
  * Kjøreverkets navn, for eksempel kv_52. Det står på én linje i /etc/kjoreverk/vehicle, som skrives
- * én gang når Pi-en settes opp, og leses bare.
+ * én gang når Pi-en settes opp (install.sh gjør det), og leses bare.
  *
- *   tcplink-adapter.js og binary-adapter.js   navnet adapteren har i huben: kilden i alarmlisten og
- *                                             hendelsesloggen (taggene beholder prefikset, "pls")
- *   hub.js                                    kilden for alarmene og hendelsene fra beregningene
- *   recorder.js                               kjøreverkets id på den sentrale serveren
+ *   tcplink-adapter.js   navnet adapteren har i huben: kilden i alarmlisten og hendelsesloggen
+ *                        (taggene beholder prefikset, "pls")
+ *   hub.js               kilden for alarmene og hendelsene fra beregningene
+ *   recorder.js          kjøreverkets id på den sentrale serveren
  *
  * Uten filen gir vehicleName() '', og hver av dem bruker sin egen reserve. HMI_VEHICLE_FILE
  * peker et annet sted, for tester. Kjører på Node 10 og nyere.
