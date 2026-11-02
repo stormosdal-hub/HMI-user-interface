@@ -307,6 +307,220 @@
           }
         }
       ]
+    },
+    {
+      "id": "plcdiag",
+      "name": "PLS diagnose",
+      "widgets": [
+        {
+          "id": "plcdiag-buffer",
+          "type": "plcdiag",
+          "x": 20,
+          "y": 20,
+          "w": 880,
+          "h": 680,
+          "props": {
+            "label": "Diagnosebufferen i PLS-en",
+            "dataset": "${pls}.diagbuffer",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "plcdiag-link",
+          "type": "led",
+          "x": 920,
+          "y": 20,
+          "w": 340,
+          "h": 80,
+          "props": {
+            "label": "Linken til PLS-en",
+            "tag": "${pls}.link",
+            "onValue": "",
+            "color": "",
+            "onText": "Data fra PLS-en",
+            "offText": "Ingen data",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "plcdiag-error-led",
+          "type": "value",
+          "x": 920,
+          "y": 112,
+          "w": 340,
+          "h": 106,
+          "props": {
+            "label": "ERROR-diode",
+            "tag": "${pls}.words_8",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "cpu-led",
+            "codeShow": "text only",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "plcdiag-maint-led",
+          "type": "value",
+          "x": 920,
+          "y": 230,
+          "w": 340,
+          "h": 106,
+          "props": {
+            "label": "MAINT-diode",
+            "tag": "${pls}.words_9",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "cpu-led",
+            "codeShow": "text only",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "plcdiag-ob82-count",
+          "type": "value",
+          "x": 920,
+          "y": 348,
+          "w": 160,
+          "h": 106,
+          "props": {
+            "label": "OB82-kall",
+            "tag": "${pls}.words_10",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "plcdiag-ob80-count",
+          "type": "value",
+          "x": 1100,
+          "y": 348,
+          "w": 160,
+          "h": 106,
+          "props": {
+            "label": "OB80-kall",
+            "tag": "${pls}.words_14",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "plcdiag-ob82-hwid",
+          "type": "value",
+          "x": 920,
+          "y": 466,
+          "w": 160,
+          "h": 106,
+          "props": {
+            "label": "OB82 HW-ID",
+            "tag": "${pls}.words_11",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "plcdiag-ob82-channel",
+          "type": "value",
+          "x": 1100,
+          "y": 466,
+          "w": 160,
+          "h": 106,
+          "props": {
+            "label": "OB82 kanal",
+            "tag": "${pls}.words_12",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "plcdiag-ob82-iostate",
+          "type": "value",
+          "x": 920,
+          "y": 584,
+          "w": 160,
+          "h": 106,
+          "props": {
+            "label": "OB82 IO-status",
+            "tag": "${pls}.words_13",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "hex",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "plcdiag-ob80-fault",
+          "type": "value",
+          "x": 1100,
+          "y": 584,
+          "w": 160,
+          "h": 106,
+          "props": {
+            "label": "OB80 fault_id",
+            "tag": "${pls}.words_15",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "ob80",
+            "codeShow": "text only",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        }
+      ]
     }
   ],
   "calcs": [

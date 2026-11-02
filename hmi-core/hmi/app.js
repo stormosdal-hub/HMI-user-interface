@@ -41,6 +41,8 @@
     cardTab: new Map(),        // kort-id -> fanen som vises (mens siden er åpen)
     requests: new Map(),       // forespørsel-id -> resolve (sjekk av formler)
     unsent: [],                // spørsmål som venter på forbindelsen (historikk, mens siden starter)
+    datasets: new Map(),       // navn -> { name, owner, online, ts, data, stale } fra huben, se ctx.dataset
+    datasetWatch: new Map(),   // navn -> Set(fn): widgetene som viser datasettet
     clipboard: null,           // kopierte widgeter (Ctrl+C / høyreklikkmenyen)
     pasteCount: 0,
     announceCalcs: false,
@@ -187,7 +189,7 @@
     const def = H.widgets[w.type];
     const props = { ...w.props };
     if (def) for (const p of def.props) {
-      if ((p.type === 'tag' || p.type === 'tags') && typeof props[p.key] === 'string') props[p.key] = resolveTag(props[p.key]);
+      if ((p.type === 'tag' || p.type === 'tags' || p.type === 'dataset') && typeof props[p.key] === 'string') props[p.key] = resolveTag(props[p.key]);
       if (p.type === 'bindings' && Array.isArray(props[p.key])) props[p.key] = props[p.key].map(b => ({ ...b, tag: resolveTag(b.tag) }));
       if (p.type === 'inputs' && props[p.key] && typeof props[p.key] === 'object') {
         props[p.key] = Object.fromEntries(Object.entries(props[p.key]).map(([k, t]) => [k, resolveTag(t)]));
@@ -310,6 +312,20 @@
     refresh(id) { if (state.mode === 'edit' && state.selected === id) renderInspector(); },
     // kodetekster: teksten for en verdi, og popup-vinduet med beskrivelsen
     code: (listId, value) => H.codes.lookup(listId, value),
+    // datasett fra en adapter (f.eks. PLS-ens diagnosebuffer): fn(record) nå og ved hver endring, der
+    // record er { name, owner, online, ts, data, stale } eller null før huben har sendt noe.
+    // stale: forbindelsen til huben er borte. Gir en funksjon som avslutter abonnementet.
+    dataset(name, fn) {
+      if (!state.datasetWatch.has(name)) state.datasetWatch.set(name, new Set());
+      state.datasetWatch.get(name).add(fn);
+      fn(state.datasets.get(name) || null);
+      return () => { const set = state.datasetWatch.get(name); if (set) set.delete(fn); };
+    },
+    // en knapp i en widget, sendt til adapteren bak datasettet: datasetAction('pls.diagbuffer', 'refresh')
+    datasetAction(name, action) {
+      if (!send({ type: 'datasetAction', name, action })) { toast('Not connected to the hub', true); return false; }
+      return true;
+    },
     openCode(listId, value, { title, shown } = {}) {
       H.openCodeInfo({ listId, value, title, shown, canEdit: canEditCodes, openList: openCodeEditor,
         save: (id, code, set) => changeCodes([{ list: id, code, set }]) });
@@ -1624,9 +1640,15 @@
       for (const v of state.values.values()) v.quality = 'bad';
       for (const id of state.mounted.keys()) refreshStale(id);
       H.alarms.set(null, { stale: true });   // fortsett å vise listen, merket som utdatert
+      for (const d of state.datasets.values()) { d.stale = true; datasetChanged(d.name); }
       state.reconnectTimer = setTimeout(connect, 2500);
     };
     ws.onerror = () => {};
+  }
+
+  function datasetChanged(name) {
+    const d = state.datasets.get(name) || null;
+    for (const fn of [...(state.datasetWatch.get(name) || [])]) { try { fn(d); } catch (e) { console.error(e); } }
   }
 
   function onMessage(m) {
@@ -1694,6 +1716,10 @@
         break;
       case 'alarms':
         H.alarms.set(m.alarms || []);
+        break;
+      case 'dataset':
+        state.datasets.set(m.name, m);
+        datasetChanged(m.name);
         break;
       case 'history': {
         const list = state.pendingHistory.get(m.tag) || [];

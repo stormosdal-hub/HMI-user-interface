@@ -16,7 +16,7 @@ Huben har en liste over **tagger** (verdier med et fast navn, som `pls.reals_0`)
 en tag med navnet og enheten PLS-en gir den (`Hastighet [rpm]`), og sender kommandoer fra
 HMI-en tilbake til PLS-en. Alle nettlesere som åpner HMI-en, ser de samme taggene, live.
 
-![Slik henger HMI core sammen: PLS-en med TcpLink, tcplink-adapter.js, huben og HMI-en](docs/architecture.svg)
+![Slik henger HMI core sammen: PLS-en med TcpLink og web-serveren, tcplink-adapter.js, plcdiag-adapter.js, huben og HMI-en](docs/architecture.svg)
 
 ---
 
@@ -32,7 +32,7 @@ HMI-en tilbake til PLS-en. Alle nettlesere som åpner HMI-en, ser de samme tagge
 8. [Lagring til database](#8-lagring-til-database): hva huben holder i minnet, og [recorderen](#recorderen-til-den-sentrale-serveren) som sender til den sentrale serveren
 9. [Tegninger (SVG)](#9-tegninger-svg) — hva en tegning trenger, og [å spole tilbake i tid](#spole-tilbake-i-tid)
 10. [Animasjoner (Three.js)](#10-animasjoner-threejs) — hva en kodesnutt trenger
-11. [Forbindelsen til PLS-en](#11-forbindelsen-til-pls-en) — [kjøreverkets navn](#kjøreverkets-navn), [tcplink-adapter.js med navnene fra PLS-en](#tcplink-navnene-kommer-fra-pls-en) og [historikken fra PLS-en](#historikken-fra-pls-en)
+11. [Forbindelsen til PLS-en](#11-forbindelsen-til-pls-en) — [kjøreverkets navn](#kjøreverkets-navn), [tcplink-adapter.js med navnene fra PLS-en](#tcplink-navnene-kommer-fra-pls-en), [historikken fra PLS-en](#historikken-fra-pls-en) og [PLS-diagnose](#pls-diagnose-diagnosebufferen-fra-pls-en)
 12. [Referanse](#12-referanse) — protokoll, HTTP-API, prosjektfil, kommandolinje
 13. [Sikkerhet](#13-sikkerhet)
 14. [Feilsøking](#14-feilsøking)
@@ -162,7 +162,8 @@ gjenbrukbar.
   hmi-core/
     hub.js           program: huben og HMI-en            node hub.js
     recorder.js      program: sender til den sentrale serveren   node recorder.js
-    adapters/        program: tcplink-adapter.js (PLS-en), og innstillingene i tcplink-options/
+    adapters/        program: tcplink-adapter.js (PLS-en), plcdiag-adapter.js (PLS-ens diagnosebuffer),
+                     og innstillingene i tcplink-options/
     lib/             kode programmene bruker; kjøres ikke alene (calc.js, record-rules.js, vehicle.js)
     hmi/             nettsiden til HMI-en, som huben sender til nettleseren
     config/          prosjektet: hmi.json, codes.json, tagnames.json, assets/
@@ -180,10 +181,12 @@ Pi-en, også oppsettet `install.sh` skriver i `/etc`, står i [docs/pi-files.svg
 | `lib/calc.js` | Formelspråket for beregnede tagger. Brukes av `hub.js` |
 | `recorder.js` | Sender taggene og hendelsene reglene velger, til den sentrale serveren. Se [Recorderen](#recorderen-til-den-sentrale-serveren) |
 | `lib/record-rules.js` | Lagringsreglene recorderen bruker (dødbånd, intervaller, flimring, pauser). Brukes av `recorder.js` |
-| `lib/vehicle.js` | Leser [kjøreverkets navn](#kjøreverkets-navn) fra `/etc/kjoreverk/vehicle`. Brukes av `tcplink-adapter.js`, `hub.js` og `recorder.js` |
+| `lib/vehicle.js` | Leser [kjøreverkets navn](#kjøreverkets-navn) fra `/etc/kjoreverk/vehicle`. Brukes av `tcplink-adapter.js`, `plcdiag-adapter.js`, `hub.js` og `recorder.js` |
 | `hmi/` (hele mappen) | HMI-en i nettleseren: editor, kjøremiljø, alle widgeter, stiler |
 | `package.json` | Avhengigheter (`ws`, `three`) — `npm install` lager `node_modules/` ut fra den |
 | `adapters/tcplink-adapter.js` | Forbindelsen til en PLS med TcpLink-blokken: størrelsene og navnene på plassene kommer fra PLS-en, så den trenger ingen layoutfil. Se [TcpLink: navnene kommer fra PLS-en](#tcplink-navnene-kommer-fra-pls-en) |
+| `adapters/plcdiag-adapter.js` | Henter PLS-ens diagnosebuffer fra PLS-ens web-server når PLS-en melder en feil, og gir den til huben. Se [PLS-diagnose](#pls-diagnose-diagnosebufferen-fra-pls-en) |
+| `adapters/plcdiag-web.js` | Leser sidene til web-serveren i PLS-en. Den eneste fila som må tilpasses hvis en ny firmware endrer dem. Brukes av `plcdiag-adapter.js` |
 | `README.md` | Denne filen |
 | `docs/` | `CALCULATIONS.md` (referansen for beregninger og betingelser), `PLAN.md` (planen for recorderen og den sentrale databasen), `SERVER-PLAN.md` (serveren, som bygges i et eget prosjekt), `PROTOKOLL.md` (grensesnittet mellom dem), arkitekturdiagrammene, og skriptene som tegner dem (`docs/src/`) |
 
@@ -212,7 +215,7 @@ ved siden av den prosjektfilen den ble startet med.
 | Fil | Hva den er |
 |---|---|
 | `adapters/tcplink-options/kjoreverk-options.json` | Innstillingene for TcpLink-blokken på kjøreverket: alarmer på feil- og varselkoden, bitene i ZSW1, og hold-for-å-kjøre på joggebitene |
-| `config/hmi.json`, `config/codes.json`, `config/assets/` | Prosjektet huben starter med (se [1](#1-kom-i-gang)) |
+| `config/hmi.json`, `config/codes.json`, `config/assets/` | Prosjektet huben starter med (se [1](#1-kom-i-gang)): skjermbildene for kjøreverket og *PLS diagnose*, og kodetekstene, også for CPU-diodene og OB80 |
 
 Prosjektet ligger i `hmi-core/config/` bare for at `node hub.js` skal virke med en gang.
 Vil du kunne bytte ut kjernen uten å røre prosjektet, flytter du det ut av kjernemappen, som
@@ -273,8 +276,10 @@ En tag har en verdi (tall, boolsk eller tekst), et tidsstempel og en kvalitet:
 | `bad` | Adapteren som eier taggen, er frakoblet. Widgetene blir grå og viser *stale*, og fortsetter å vise siste verdi |
 
 **Adapter.** Et program som kobler seg til huben, publiserer tagger og utfører skrivinger.
-Her er det `tcplink-adapter.js`, som står mellom huben og PLS-en. Når den utfører en
-skriving, sender den den nye verdien tilbake (*ekkoet*): verdien som nå står i kommandorammen
+Her er det `tcplink-adapter.js`, som står mellom huben og PLS-en, og `plcdiag-adapter.js`, som
+henter PLS-ens diagnosebuffer og sender den som et *datasett* (en liste, ikke én verdi; se
+[PLS-diagnose](#pls-diagnose-diagnosebufferen-fra-pls-en)). Når `tcplink-adapter.js` utfører
+en skriving, sender den den nye verdien tilbake (*ekkoet*): verdien som nå står i kommandorammen
 til PLS-en. Det er ekkoet alle HMI-er viser, så et betjeningselement vises først som omslått når
 adapteren har tatt imot det.
 
@@ -452,6 +457,7 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
 | Timeline | opptil 128 av/på-tagger | — | Ett felt per digitalt signal, med en stolpe der det var på. Dra for å gå bakover i tid, rull eller klyp for å zoome; markøren viser når signalet slo seg på og av. Et klikk setter en tidsmarkør som tegninger med *Time slider* følger. Se [Tidslinje](#tidslinje-for-digitale-signaler) |
 | Event log | hendelser | — | Filtrer på kildeprefiks og laveste alvorlighetsgrad |
 | Alarm list | alarmer | — | De aktive og ukvitterte alarmene, med Ack; filtrer på kilde og alvorlighetsgrad. Se [Alarmer](#alarmer-og-kvittering) |
+| PLC diagnostics | et datasett | Refresh | PLS-ens diagnosebuffer: én rad per oppføring, et klikk viser den lange teksten. *Dataset* er `${pls}.diagbuffer`. Se [PLS-diagnose](#pls-diagnose-diagnosebufferen-fra-pls-en) |
 | Drawing | mange tagger | mange tagger | En SVG med en koblingstabell — se [9](#9-tegninger-svg). *Time slider* gir en tidsstripe for å spole tilbake og se tegningen slik den var, se [Spole tilbake i tid](#spole-tilbake-i-tid) |
 | Animation | mange tagger | — | En Three.js-kodesnutt med deklarerte innganger — se [10](#10-animasjoner-threejs) |
 
@@ -1208,6 +1214,13 @@ PLC*), `pls.rx_gaps` (hopp i sekvensnummeret), `pls.ts` (PLS-klokka) og
 - **Enheter:** en `[...]` helt til slutt i navnet på en tallplass (ints, dints og reals, begge
   veier) blir enheten: `'Hastighet [rpm]'` blir navnet *Hastighet* med enheten *rpm*. Bits,
   words og times beholder hele teksten, som i klientene i PLS-prosjektet.
+- **Merker:** et `{merke}` helt til slutt i navnet (`'ERROR-diode {led}'`, `TCP_LINK.md` §3.6)
+  tas bort fra navnet, før enheten, og følger taggen som `format`. HMI-en viser *ERROR-diode*.
+  `plcdiag-adapter.js` bruker merkene til å finne diagnosesignalene: et word med `{led}`,
+  `{ob80}` eller `{dec}`, eller en bit med `{alarm}`, setter i gang en henting av
+  diagnosebufferen når det endres (se [PLS-diagnose](#pls-diagnose-diagnosebufferen-fra-pls-en)).
+  Verdien vises som tall; skjermbildet *PLS diagnose* viser diodene som tekst med kodelisten
+  *CPU-dioder*.
 - **Plasser uten navn** registreres også, med bare plassnavnet (`pls.bit05`). **With a name**
   i tagoversikten viser bare de navngitte.
 - **Hvorfor taggen ikke heter det samme som navnet:** skjermbilder, beregninger og historikk
@@ -1306,6 +1319,98 @@ Adapterloggen viser hva PLS-en har ved hver tilkobling:
   og hendelsesloggen bygges ikke opp igjen av historikken, og beregnede tagger (`calc.*`) får
   ingen historikk tilbake.
 
+### PLS-diagnose: diagnosebufferen fra PLS-en
+
+TcpLink sier **at** noe er galt i CPU-en: ERROR- og MAINT-dioden, og at OB82 eller OB80 har
+kjørt (`TcpLinkDiag.scl`, `TCP_LINK.md` §3.9). **Hvorfor** står i PLS-ens diagnosebuffer. Den
+har ingen plass i TcpLink, men web-serveren i PLS-en viser den. Skjermbildet **PLS diagnose**
+viser bufferen, med diodene og tellerne ved siden av.
+
+```
+PLS-en ── TcpLink ──► tcplink-adapter.js ──► huben ──► pls.words_8 (ERROR-diode) endres
+                                               │
+                                               ▼ følger signalene
+PLS-ens web-server ◄── GET, sidene for nettleseren ── plcdiag-adapter.js
+                   ──── HTML ──────────────────────►  plcdiag-web.js plukker ut radene
+                                                          │ datasettet pls.diagbuffer
+                                                          ▼
+                                     huben ──► PLC diagnostics-widgeten på PLS diagnose
+```
+
+`adapters/plcdiag-adapter.js` er en egen tjeneste, `kjoreverk@plcdiag-adapter`. `install.sh`
+setter den opp med PLS-ens adresse, og web-serveren er `https://` på den samme adressen. Den
+følger diagnosesignalene gjennom huben, og henter bufferen når noe skjer:
+
+| Når | Hvorfor |
+|---|---|
+| tjenesten starter | skjermbildet skal ha innhold med en gang |
+| linken til PLS-en kommer opp | Pi-en har startet, eller PLS-en er tilbake |
+| linken faller | CPU-en kan ha gått i STOP; web-serveren svarer også da |
+| et diagnosesignal endrer seg: et word med `{led}`, `{ob80}` eller `{dec}` i navnet, eller en bit med `{alarm}` | noe har skjedd i CPU-en: ERROR-dioden, eller et kall av OB82 eller OB80 |
+| **Refresh** i widgeten | når du vil |
+| 30 s etter en henting som ikke lyktes, så sjeldnere, høyst hvert 5. minutt | PLS-en eller nettet var ikke klart |
+
+Flere grunner tett etter hverandre gir én henting, og det går aldri mer enn én om gangen.
+Signalene setter i gang høyst én henting hvert 10. sekund, så en syklustid som overskrides hele
+tiden, ikke gir PLS-en mer å gjøre. Ellers hentes ingenting: det er ingen fast polling.
+
+**Bare i RAM.** PLS-en har 50 plasser, og en nedlasting fra TIA kan gi ti nye oppføringer.
+Tjenesten tar vare på opptil 500, også dem PLS-en har skjøvet ut, til den starter på nytt. Da
+hentes de 50 PLS-en har, på nytt. Huben holder bare siste utgave i minnet. Ingenting skrives til
+SD-kortet.
+
+**Skjermbildet PLS diagnose:**
+- **PLC diagnostics** har én rad per oppføring: plassen i PLS-en (`–` når PLS-en har skjøvet
+  den ut og bare Pi-en har den), tid og dato i nettleserens tidssone, *Incoming* eller
+  *Outgoing*, og hendelsen. En rød strek er en feil (den lange teksten begynner med *Error:*).
+  Et klikk på raden viser den lange teksten slik PLS-en har den, med hendelses-ID og tiden i UTC;
+  teksten kan markeres og kopieres. En ny oppføring blinker når den kommer.
+- **Statuslinjen** sier når bufferen ble hentet og hvorfor, hvor mange oppføringer PLS-en har og
+  hvor mange Pi-en har tatt vare på, og hva som gikk galt hvis en henting ikke lyktes.
+  **Refresh** henter på nytt.
+- **Til høyre:** linken til PLS-en, ERROR- og MAINT-dioden som tekst (kodelisten *CPU-dioder*:
+  *av*, *lyser*, *blinker* …), antall kall av OB82 og OB80 siden PLS-en startet, hardware-ID,
+  kanal og IO-status fra siste OB82, og `fault_id` fra OB80 (kodelisten *OB80 fault_id*). De er
+  koblet til `words_8` til `words_15`, slik `LinkNames.db` har dem. Flytter du signalene i
+  PLS-en, flytt widgetene også.
+- Teksten fra PLS-en er på engelsk; PLS-en har ikke norsk.
+
+**Krav i PLS-en (TIA):**
+- *Activate web server on this module* er krysset av, og maskinvarekonfigurasjonen er lastet ned.
+- Brukeren **Everybody** har *query diagnostics*. Det gir bare lesing av diagnosen. Gi ikke
+  Everybody noe mer enn det, og aldri *write tags*.
+- Diagnosesignalene fra `TcpLinkDiag.scl` i `txDigital.words`, med merkene i `LinkNames`
+  (`TCP_LINK.md` §3.9). Uten dem hentes bufferen bare ved oppstart, når linken kommer og går,
+  og med Refresh.
+
+**Ny firmware i PLS-en.** Sidene er laget for nettleseren, ikke for programmer. Alt som avhenger
+av dem, står i `adapters/plcdiag-web.js` (`parseTable`, `parseLong` og `decodeKey`); resten av
+HMI-en ser bare datasettet. Slik ser du om den fortsatt leser riktig:
+
+```bash
+node adapters/plcdiag-web.js 10.0.123.51           # leser bufferen slik tjenesten gjør, og skriver den ut
+node adapters/plcdiag-web.js 10.0.123.51 --raw     # HTML-en PLS-en sender, for å se hva som er endret
+sudo systemctl restart kjoreverk@plcdiag-adapter   # når den leser riktig igjen
+```
+
+Bare denne tjenesten trenger en omstart: linken til PLS-en og huben går som før.
+`plcdiag-web.js` er bygd på `tcplink_diagbuf.js` i PLS-prosjektet; endrer du den ene, endre den
+andre også. Med TIA V17 og firmware 4.5 kan PLS-ens Web API (JSON) ta over.
+
+```bash
+node adapters/plcdiag-adapter.js --plc=10.0.123.51:2000    # PLS-en, som for tcplink-adapter.js (porten tas bort)
+node adapters/plcdiag-adapter.js --web=http://10.0.123.60  # web-serveren på en annen adresse, eller uten kryptering
+node adapters/plcdiag-adapter.js --watch=words_8,words_14  # andre signaler enn de merkede
+```
+
+Navnet i huben er kjøreverkets navn med `.diag` (`kv_52.diag`), og datasettet heter
+`pls.diagbuffer`. Stopper tjenesten, står *kv_52.diag: Adapter disconnected* i alarmlisten, som
+for alle adaptere, og widgeten viser det den fikk sist.
+
+**En alarm når ERROR-dioden lyser eller blinker:** dioden gir ingen alarm av seg selv. Lag en
+beregning i **ƒ Calculations**, for eksempel `between(${pls}.words_8, 2, 6)` med en alarm som
+*The PLC reports a fault: see PLS diagnose*. Svarene 2 til 6 er *lyser* og *blinker*.
+
 ---
 
 ## 12. Referanse
@@ -1320,12 +1425,14 @@ forbindelse; `hello` sier hvilken av dem det er.
 | Melding | Fra | Formål |
 |---|---|---|
 | `{"type":"hello","role":"adapter"\|"hmi","name":"kv_52"}` | begge | Identifiser seg. For en adapter er `name` kilden i alarmlisten og hendelsesloggen. `tcplink-adapter.js` bruker kjøreverkets navn, eller tagprefikset uten det |
-| `{"type":"register","tags":[{"name":"pls.reals_0","dataType":"number","unit":"rpm","writable":false,"description":"..."}]}` | adapter | Deklarer tagger. Valgfritt: ukjente tagger opprettes ved første oppdatering. En tag kan ha med `"alarm": {"severity","text","when","delay","codes"}`; `tcplink-adapter.js` lager det ut fra `"tags"` i innstillingsfilen. `"label"` er enhetens eget navn på taggen (`tcplink-adapter.js`: navnet fra PLS-en); huben viser det når du ikke har gitt taggen ditt eget |
+| `{"type":"register","tags":[{"name":"pls.reals_0","dataType":"number","unit":"rpm","writable":false,"description":"..."}]}` | adapter | Deklarer tagger. Valgfritt: ukjente tagger opprettes ved første oppdatering. En tag kan ha med `"alarm": {"severity","text","when","delay","codes"}`; `tcplink-adapter.js` lager det ut fra `"tags"` i innstillingsfilen. `"label"` er enhetens eget navn på taggen (`tcplink-adapter.js`: navnet fra PLS-en); huben viser det når du ikke har gitt taggen ditt eget. `"format"` er hvordan enheten foreslår at verdien vises (`tcplink-adapter.js`: merket i navnet fra PLS-en, `led` for `'ERROR-diode {led}'`) |
 | `{"type":"update","tag":"pls.reals_0","value":1450.2}` | adapter | Én verdi |
 | `{"type":"update","values":{"pls.reals_0":1450.2,"pls.bit05":true}}` | adapter | Flere verdier samtidig |
 | `{"type":"event","severity":"info"\|"warning"\|"alarm","message":"text"}` | adapter | En melding eller alarm til HMI-ene |
+| `{"type":"dataset","name":"pls.diagbuffer","data":{...}}` | adapter | Et datasett: det en adapter vet som ikke er én verdi, en liste eller en tabell. Hele, hver gang det endres; huben holder siste utgave i minnet og sender det til HMI-ene som abonnerer på navnet. Huben ser ikke på innholdet. `plcdiag-adapter.js` sender PLS-ens diagnosebuffer slik |
+| `{"type":"datasetAction","name":"pls.diagbuffer","action":"refresh"}` | hmi | En knapp i en widget, sendt videre til adapteren bak datasettet (ikke fra skrivebeskyttede HMI-er) |
 | `{"type":"restore","origin":"the PLC history","series":{"pls.bit03":[[ts,true,"812@…"],...]}}` | adapter | Eldre punkter fra enheten selv, til historikken; verdien nå endres ikke. Det tredje feltet er valgfritt og sier hvilken post punktet kommer fra, så det samme sendt på nytt hoppes over. Se [Historikken fra PLS-en](#historikken-fra-pls-en) |
-| `{"type":"subscribe","tags":["pls.*","*"]}` | hmi | Motta oppdateringer. Gjeldende verdier sendes med en gang |
+| `{"type":"subscribe","tags":["pls.*","*"]}` | hmi | Motta oppdateringer, og datasettene med de navnene. Gjeldende verdier og datasett sendes med en gang |
 | `{"type":"unsubscribe","tags":[...]}` | hmi | Slutt å motta dem |
 | `{"type":"write","tag":"pls.cmd_bit00","value":true}` | hmi | Be adapteren som eier taggen, om å endre noe |
 | `{"type":"ack","keys":["tag:pls.words_0"]}` eller `{"type":"ack","all":true}` | hmi | Kvitter alarmer (ikke fra skrivebeskyttede HMI-er) |
@@ -1348,6 +1455,8 @@ forbindelse; `hello` sier hvilken av dem det er.
 | `{"type":"alarms","alarms":[{"key","source","severity","text","active","acked","since",...}]}` | hmi | Alarmlisten; sendes ved hello og etter hver endring |
 | `{"type":"historyRange","id","series":{"tag":[[ts,value],...]},"source","note"}` | hmi | Svar på historyRange. `null` som verdi er et hull (stale) |
 | `{"type":"restored","series":{"tag":[[ts,value],...]}}` | hmi | Punkter en adapter har gjenopprettet, og som var nye for huben. En trend med en av taggene henter tidsrommet sitt på nytt |
+| `{"type":"dataset","name","owner","online","ts","data"}` | hmi | Et datasett, ved subscribe og hver gang det endres. `online` er false når adapteren som sender det, er borte; `data` er det den sendte sist |
+| `{"type":"datasetAction","name","action","from"}` | adapter | En knapp i en widget for et datasett adapteren sender |
 | `{"type":"query","id","tags","from","to","points"}` | adapter med `serves` | Spørsmålet fra en trend, til en adapter som sa `"serves":["history"]` i sin hello |
 | `{"type":"calcCheck","id","ok","error","pos","deps","unknown","value"}` | hmi | Svar på checkCalc |
 | `{"type":"codes","codes":{"lists":{...}},"error"}` | hmi | Kodetekstene; sendes ved hello og etter hver endring |
@@ -1371,6 +1480,8 @@ Alt går på hubens port:
 | `GET /api/tags` | Taglisten med gjeldende verdier, navnet som vises (`label`: ditt eget, `ownLabel`, ellers adapterens, `deviceLabel`) og din beskrivelse (`info`) for hver tag |
 | `GET /api/events` | Nylige hendelser |
 | `GET /api/alarms` | Alarmlisten: aktive, og ikke kvittert ennå |
+| `GET /api/datasets` | Datasettene: navn, adapteren som sender det, om den er tilkoblet, og når det sist endret seg |
+| `GET /api/datasets/<name>` | Ett datasett med innholdet, for eksempel `/api/datasets/pls.diagbuffer` |
 | `GET /api/history?tag=...` | Historikken til én tag |
 | `GET /api/assets` | Filer i prosjektets `assets/`-mappe |
 | `GET` / `PUT` / `DELETE /api/assets/<name>` | Én asset (kan også leses som `/assets/<name>`) |
@@ -1446,10 +1557,15 @@ node adapters/tcplink-adapter.js [options.json] [ws://hub:8080] [--plc=ip:port] 
 ```
 
 ```bash
+node adapters/plcdiag-adapter.js [ws://hub:8080] [--plc=ip:port] [--web=https://ip] [--device=pls] [--watch=words_8,...] [--name=kv_52.diag]
+node adapters/plcdiag-web.js <ip eller https://ip> [--raw]
+```
+
+```bash
 node recorder.js [--config /etc/kjoreverk/recorder.json] [ws://hub:8080] [--vehicle kv_52] [--server http://dbserver:8090] [--token ...] [--queue-mb 64]
 ```
 
-Uten `ws://...` kobler adapteren og recorderen til `HUB_URL`, eller `ws://localhost:8080`.
+Uten `ws://...` kobler adapterne og recorderen til `HUB_URL`, eller `ws://localhost:8080`.
 Bruken står også øverst i hver fil. Innstillingene til recorderen står i
 [Recorderen](#recorderen-til-den-sentrale-serveren).
 
@@ -1537,6 +1653,10 @@ flanke før den virker igjen. Ellers kan drivet starte av seg selv når rammene 
 | En alarm kommer tilbake hvert sekund | Verdien ligger og vipper ved grensen. Gi den hysterese i PLS-en, eller en *Delay* i alarmen (**☰ Tag-list**) |
 | En tag du har gjort til en alarm, gir ingen alarm | Sjekk *Active* (på eller av), og at taggen har en verdi: en foreldet verdi (*stale*) endrer ikke alarmen. Hubens logg sier `[names] WARNING` hvis `tagnames.json` er redigert for hånd og alarmen ikke kan brukes |
 | En alarm blir stående i listen | Den venter på kvittering, eller den er fortsatt aktiv. Bare alarmer som er både borte *og* kvittert, forsvinner fra listen |
+| *PLS diagnose* sier *Waiting for pls.diagbuffer* | Tjenesten kjører ikke: `systemctl status kjoreverk@plcdiag-adapter`. En Pi satt opp før den kom, får den med `sudo bash /opt/kjoreverk/install.sh` |
+| *Couldn’t fetch: ECONNREFUSED* | Web-serveren i PLS-en er ikke slått på, eller maskinvarekonfigurasjonen er ikke lastet ned etterpå. Se [krav i PLS-en](#pls-diagnose-diagnosebufferen-fra-pls-en) |
+| *Couldn’t fetch: HTTP 403* eller *no entries on the page* | Brukeren *Everybody* mangler *query diagnostics*. Er rettigheten der, har en ny firmware endret sidene: `node adapters/plcdiag-web.js <PLS-en> --raw` viser dem |
+| *PLS diagnose* henter ikke når ERROR-dioden endres | Tjenestens logg sier hvilke signaler den følger: `watching pls.link, pls.words_8 (ERROR-diode), …`. Mangler de, har ikke navnene i `LinkNames` merkene (`{led}`, `{ob80}`, `{dec}`); eller gi signalene med `--watch` |
 | En annen nettleser viser den gamle layouten | Last siden inn på nytt etter lagring |
 | `EADDRINUSE` når huben startes | Porten er opptatt av en annen hub. Velg en annen: `node hub.js 8081 ...` |
 | "The project couldn't be opened" | `hmi.json` er redigert for hånd og er ikke lenger gyldig JSON; meldingen sier hvor feilen er. Rett den og last inn på nytt. Lagring fra HMI-en spør først, og huben tar da vare på den gamle filen som `hmi.json.unreadable-<time>` |

@@ -11,7 +11,8 @@
  *   - én tag per plass, oppkalt etter plassen: pls.bit00, pls.words_0, pls.reals_0, og
  *     pls.cmd_bit00, pls.cmd_ints_0 ... for kommandoene tilbake
  *   - navnet fra PLS-en blir taggens navn i HMI-en (label), og en [enhet] til slutt i navnet på
- *     en tallplass blir enheten: 'Hastighet [rpm]' gir Hastighet, rpm
+ *     en tallplass blir enheten: 'Hastighet [rpm]' gir Hastighet, rpm. Et {merke} helt til slutt
+ *     tas bort fra navnet og følger taggen som format: 'ERROR-diode {led}' gir ERROR-diode, led
  *   - endrer du størrelsen på en UDT, eller et navn, i PLS-en, registrerer adapteren taggene
  *     på nytt ved neste tilkobling (eller på en flanke på resendNames)
  *
@@ -246,6 +247,15 @@ function splitUnit(s, text) {
   return m ? { label: m[1], unit: m[2].trim() } : { label: text, unit: '' };
 }
 
+// 'ERROR-diode {led}' -> { text: 'ERROR-diode', format: 'led' }. Et {merke} helt til slutt i navnet
+// sier hvordan PLS-prosjektets klienter viser verdien (TCP_LINK.md §3.6): {led}, {ob80}, {dec},
+// {alarm}. Det tas bort fra navnet før enheten, for alle slags plasser, og følger taggen som
+// format: plcdiag-adapter.js henter diagnosebufferen når et {led}-, {ob80}- eller {dec}-word endres.
+function splitFormat(text) {
+  const m = /^(.*\S)\s*\{([A-Za-z0-9_]+)\}$/.exec(text || '');
+  return m ? { text: m[1], format: m[2] } : { text: text || '', format: '' };
+}
+
 function hexdump(buf, cols = 16) {
   const lines = [];
   for (let i = 0; i < buf.length; i += cols) {
@@ -372,10 +382,10 @@ function run(o, hubUrl, dump) {
       const s = SECTIONS[k];
       if (s.kind === 'dtl' && s.cmd) continue;     // ingen times i retning PC -> PLS
       for (let i = 0; i < slots(s, layout[k]); i++) {
-        const name = s.tag(i), x = opt(name), n = splitUnit(s, nameOf(s, i));
+        const name = s.tag(i), x = opt(name), f = splitFormat(nameOf(s, i)), n = splitUnit(s, f.text);
         if (n.label) labels.set(name, n.label);
         const dataType = s.kind === 'bool' ? 'boolean' : s.kind === 'dtl' ? 'string' : 'number';
-        tags.push({ name: T(name), dataType, unit: n.unit, label: n.label, writable: !!s.cmd,
+        tags.push({ name: T(name), dataType, unit: n.unit, label: n.label, format: f.format || undefined, writable: !!s.cmd,
           description: x.description || `${s.udt}[${i}] in the PLC`,
           alarm: s.cmd ? undefined : alarmOf(x, n.label || name, s.kind === 'bool') });
         if (s.kind === 'dtl') tags.push({ name: T(name + '_age'), dataType: 'number', unit: 's', label: n.label ? n.label + ' (age)' : '',
@@ -764,7 +774,7 @@ function run(o, hubUrl, dump) {
 }
 
 // ================================================================ start
-module.exports = { SECTIONS, nextFrame, walkNames, decodeData, decodeHistory, encodeCommands, splitUnit, cp1252, loadOptions };
+module.exports = { SECTIONS, nextFrame, walkNames, decodeData, decodeHistory, encodeCommands, splitUnit, splitFormat, cp1252, loadOptions };
 
 if (require.main === module) {
   const args = process.argv.slice(2);

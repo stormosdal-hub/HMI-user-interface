@@ -4,14 +4,14 @@ from svgkit import *
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'architecture.svg')
 
 W, H = 1600, 1110
-s = Svg(W, H, 'HMI core-arkitektur: PLS-en med TcpLink, tcplink-adapter.js, huben og HMI-en')
+s = Svg(W, H, 'HMI core-arkitektur: PLS-en med TcpLink og web-serveren, tcplink-adapter.js, plcdiag-adapter.js, huben og HMI-en')
 
 # ---------------------------------------------------------------- tittel og forklaring
 s.add(s.text(48, 62, 'HMI core: slik henger det sammen', 30, INK, 600))
 s.add(s.text(48, 92, 'PLS-en til venstre, operatørene til høyre. Verdier går mot høyre, kommandoer mot venstre.', 15, INK2))
 s.legend(48, 128, [(AMBER, 'verdier og status', False), (BLUE, 'kommandoer (skriving)', False),
                    (CYAN, 'konfigurasjon, prosjekt og filer', False), (VIOLET, 'beregnede tagger', False),
-                   (INK3, 'PLS-ens egen protokoll (TCP)', True)])
+                   (INK3, 'PLS-en: TcpLink (TCP) og web-serveren (HTTPS)', True)])
 
 # kolonner
 PX, PW = 48, 212          # PLS
@@ -37,16 +37,28 @@ h2 = s.box(AX, a2, AW, 'kjoreverk-options.json', [
     sub='adapters/tcplink-options/', accent=CYAN, mono_title=True)
 s.arrow(AX + AW / 2, a2 - 2, AX + AW / 2, a1 + h1 + 3, CYAN, sw=1.6)
 s.add(s.text(AX + AW / 2 + 10, a1 + h1 + 20, 'leses ved start', 12, CYAN, 500))
+a3 = a2 + h2 + 30
+h3 = s.box(AX, a3, AW, 'plcdiag-adapter.js', [
+    'Henter PLS-ens diagnosebuffer fra web-serveren når PLS-en melder en feil (ERROR-dioden, OB82, OB80), og gir den til huben som datasettet pls.diagbuffer. Bare i RAM.',
+    ('Sidene leses av plcdiag-web.js, den eneste fila som avhenger av PLS-ens firmware.', INK3)],
+    accent=AMBER, mono_title=True)
+a3c = a3 + h3 / 2
 
 # ---------------------------------------------------------------- PLS-en
 ph1 = s.box(PX, TOP, PW, 'Siemens S7-1200', [
-    'Sender data (196 byte) ved endring og minst én gang i sekundet, og navnene fra LinkNames ved hver tilkobling.',
+    'Sender data (212 byte) ved endring og minst én gang i sekundet, og navnene fra LinkNames ved hver tilkobling.',
     'Logger endringer i en retentiv ringbuffer og sender hele den ved hver tilkobling.',
     'Tar imot kommandorammen (80 byte); er den borte i 2 s, nullstilles rx.'],
     sub='TcpLink, LinkNames og LinkHistory', accent=INK3, title_size=14)
 s.arrow(PX + PW, a1c, AX - 2, a1c, INK3, both=True, dash='5 4', sw=1.6)
 s.add(s.text((PX + PW + AX) / 2, a1c - 12, 'TCP', 12, INK3, 500, 'middle'))
 s.add(s.text((PX + PW + AX) / 2, a1c + 22, 'port 2000', 12, INK3, 400, 'middle'))
+pw3 = s.box(PX, a3, PW, 'Web-serveren', [
+    'Viser diagnosebufferen: de siste 50 hendelsene i CPU-en, på sider laget for nettleseren.'],
+    sub='i den samme S7-1200', accent=INK3, title_size=14)
+s.arrow(PX + PW, a3c, AX - 2, a3c, INK3, both=True, dash='5 4', sw=1.6)
+s.add(s.text((PX + PW + AX) / 2, a3c - 12, 'HTTPS', 12, INK3, 500, 'middle'))
+s.add(s.text((PX + PW + AX) / 2, a3c + 22, 'port 443', 12, INK3, 400, 'middle'))
 
 # ---------------------------------------------------------------- huben
 hub_head = 58
@@ -55,7 +67,7 @@ inner_w = HW - 32
 ys = {}
 yy = parts_y
 for key, title, lines, acc in [
-    ('broker', 'Tag-broker', ['Hver tag med verdi, kvalitet og eier. Nettlesere abonnerer på tagger; en skriving går til adapteren som eier taggen.'], AMBER),
+    ('broker', 'Tag-broker', ['Hver tag med verdi, kvalitet og eier, og datasettene adaptere sender. Nettlesere abonnerer på tagger; en skriving går til adapteren som eier taggen.'], AMBER),
     ('history', 'Historikk, hendelser og alarmer', ['De siste 600 endringene for hver numeriske tag, også det PLS-en har logget, de siste 200 hendelsene og alarmlisten med kvittering, holdt i minnet.'], AMBER),
     ('calc', 'Beregninger og kontroller', ['calc.*-tagger fra formler satt opp i HMI-en: hastighet i rpm, effekt, betingelser og kontroller over tid. De fortsetter å kjøre selv om alle nettlesere er lukket.'], VIOLET),
     ('web', 'Webserver', ['Leverer HMI-appen, prosjektfilen, tegninger, animasjonskode, kodetekster og tagnavn.'], CYAN),
@@ -84,7 +96,7 @@ bh_head = 64
 yy = TOP + bh_head
 bparts = {}
 for key, title, lines, acc, dash in [
-    ('run', 'Run-modus', ['Widgeter bundet til tagger: verdier, målere, stolper, trender, alarmer, tegninger og kort med faner. Betjeningselementer skriver kommandotagger.'], AMBER, None),
+    ('run', 'Run-modus', ['Widgeter bundet til tagger: verdier, målere, stolper, trender, alarmer, tegninger, PLS-ens diagnosebuffer og kort med faner. Betjeningselementer skriver kommandotagger.'], AMBER, None),
     ('edit', 'Edit-modus', ['Bak en valgfri passkode. Palett, egenskaper, kort og flervalg, pluss editorer for tegninger, beregninger, animasjonskode og tagnavn.'], CYAN, None),
     ('anim', 'Animasjonssandkasse', ['Three.js kjører i en lukket ramme. Tagverdier går inn; ingenting kommer ut.'], AMBER, '5 4'),
 ]:
@@ -107,14 +119,19 @@ pair(AX + AW, HX, a1c)
 s.add(s.text(gx, a1c - 22, 'update, event, restore', 12.5, AMBER, 500, 'middle'))
 s.add(s.text(gx, a1c + 34, 'write', 12.5, BLUE, 500, 'middle'))
 s.add(s.text(gx, a1c + 52, 'WebSocket, JSON', 12, INK3, 400, 'middle'))
+pair(AX + AW, HX, a3c)
+s.add(s.text(gx, a3c - 22, 'dataset', 12.5, AMBER, 500, 'middle'))
+s.add(s.text(gx, a3c + 34, 'Refresh', 12.5, BLUE, 500, 'middle'))
 
 ry, rrh = bparts['run']
 rcy = ry + rrh / 2
 hx2, bgx = HX + HW, (HX + HW + BX) / 2
 pair(hx2, BX, rcy)
-s.add(s.text(bgx, rcy - 36, 'update, tags,', 12.5, AMBER, 500, 'middle'))
-s.add(s.text(bgx, rcy - 21, 'events, alarms', 12.5, AMBER, 500, 'middle'))
-s.add(s.text(bgx, rcy + 34, 'write, ack', 12.5, BLUE, 500, 'middle'))
+s.add(s.text(bgx, rcy - 51, 'update, tags,', 12.5, AMBER, 500, 'middle'))
+s.add(s.text(bgx, rcy - 36, 'events, alarms,', 12.5, AMBER, 500, 'middle'))
+s.add(s.text(bgx, rcy - 21, 'dataset', 12.5, AMBER, 500, 'middle'))
+s.add(s.text(bgx, rcy + 34, 'write, ack,', 12.5, BLUE, 500, 'middle'))
+s.add(s.text(bgx, rcy + 49, 'Refresh', 12.5, BLUE, 500, 'middle'))
 wy, wh = ys['web']
 wc = wy + wh / 2
 s.arrow(hx2 + 3, wc, BX - 3, wc, CYAN, both=True)
@@ -128,7 +145,7 @@ xr = HX + HW - 16
 s.path_arrow(f'M{xr + 1} {cy2 + ch / 2} C {xr + 13} {cy2 + ch / 2}, {xr + 13} {by + bhh / 2}, {xr + 4} {by + bhh / 2}', VIOLET, sw=1.6)
 
 # ---------------------------------------------------------------- en verdis rundtur (en ekte sekvens, derfor nummerert)
-RY = max(a2 + h2, py + ph, TOP + b_h) + 64
+RY = max(a3 + h3, a3 + pw3, py + ph, TOP + b_h) + 64
 s.add(s.text(48, RY, 'En verdis rundtur', 20, INK, 600))
 steps = [
     ('Måle', 'PLS-en sender en datamelding når noe endres. tcplink-adapter.js gjør plassene om til tagger og sender update for dem som er endret.', AMBER),

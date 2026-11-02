@@ -10,6 +10,73 @@
           "updated": 1791033377489
         }
       }
+    },
+    "cpu-led": {
+      "name": "CPU-dioder",
+      "prefix": "",
+      "codes": {
+        "0": {
+          "updated": 1793545503636,
+          "text": "finnes ikke",
+          "info": "Svaret fra LED-instruksjonen i PLS-en (TcpLinkDiagLeds i TcpLinkDiag.scl): diode 2 er ERROR, 3 er MAINT. Dioden finnes ikke på denne CPU-en."
+        },
+        "1": {
+          "updated": 1793545503636,
+          "text": "av",
+          "info": "Svaret fra LED-instruksjonen i PLS-en (TcpLinkDiagLeds i TcpLinkDiag.scl): diode 2 er ERROR, 3 er MAINT. Av: ingen feil (ERROR) eller ikke noe vedlikehold (MAINT)."
+        },
+        "2": {
+          "updated": 1793545503636,
+          "text": "lyser",
+          "info": "Svaret fra LED-instruksjonen i PLS-en (TcpLinkDiagLeds i TcpLinkDiag.scl): diode 2 er ERROR, 3 er MAINT. Lyser fast."
+        },
+        "3": {
+          "updated": 1793545503636,
+          "text": "lyser (farge 2)",
+          "info": "Svaret fra LED-instruksjonen i PLS-en (TcpLinkDiagLeds i TcpLinkDiag.scl): diode 2 er ERROR, 3 er MAINT. Lyser fast i den andre fargen."
+        },
+        "4": {
+          "updated": 1793545503636,
+          "text": "blinker",
+          "info": "Svaret fra LED-instruksjonen i PLS-en (TcpLinkDiagLeds i TcpLinkDiag.scl): diode 2 er ERROR, 3 er MAINT. ERROR blinker: CPU-en har en feil. Hvorfor står i diagnosebufferen på skjermbildet PLS diagnose."
+        },
+        "5": {
+          "updated": 1793545503636,
+          "text": "blinker (farge 2)",
+          "info": "Svaret fra LED-instruksjonen i PLS-en (TcpLinkDiagLeds i TcpLinkDiag.scl): diode 2 er ERROR, 3 er MAINT. Blinker i den andre fargen."
+        },
+        "6": {
+          "updated": 1793545503636,
+          "text": "blinker vekselvis",
+          "info": "Svaret fra LED-instruksjonen i PLS-en (TcpLinkDiagLeds i TcpLinkDiag.scl): diode 2 er ERROR, 3 er MAINT. Blinker vekselvis mellom fargene."
+        },
+        "9": {
+          "updated": 1793545503636,
+          "text": "ikke tilgjengelig",
+          "info": "Svaret fra LED-instruksjonen i PLS-en (TcpLinkDiagLeds i TcpLinkDiag.scl): diode 2 er ERROR, 3 er MAINT. Tilstanden kan ikke leses."
+        }
+      }
+    },
+    "ob80": {
+      "name": "OB80 fault_id",
+      "prefix": "",
+      "codes": {
+        "0": {
+          "updated": 1793545503636,
+          "text": "ingen",
+          "info": "OB80 (Time error interrupt) har ikke kjørt siden PLS-en startet."
+        },
+        "1": {
+          "updated": 1793545503636,
+          "text": "syklustid overskredet",
+          "info": "fault_id 16#01 fra OB80: syklustiden er overskredet. Se diagnosebufferen."
+        },
+        "2": {
+          "updated": 1793545503636,
+          "text": "OB kalt mens den fortsatt kjørte",
+          "info": "fault_id 16#02 fra OB80: en OB ble startet mens den forrige fortsatt kjørte."
+        }
+      }
     }
   }
 }

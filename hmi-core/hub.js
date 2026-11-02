@@ -9,6 +9,8 @@
  *  - Holder siste verdi for hver tag, de siste endringene av hver numerisk tag (også de en
  *    adapter gjenoppretter fra enheten, f.eks. PLS-ens ringbuffer), og en løpende liste over
  *    hendelser/alarmer
+ *  - Sender videre datasett: det en adapter vet som ikke er én verdi, f.eks. PLS-ens
+ *    diagnosebuffer (adapters/plcdiag-adapter.js). Bare i minnet
  *
  * Bruk:    node hub.js [port] [config-file]
  *          HMI_PORT=8080 HMI_CONFIG=./config/hmi.json node hub.js
@@ -47,6 +49,7 @@ const EVENTS_LEN = 200;
 const tags = new Map();     // name -> { name, dataType, unit, writable, owner, value, ts, quality }
 const history = new Map();  // name -> [[ts, value], ...]
 const events = [];          // løpende liste med { type:'event', ts, source, severity, message }
+const datasets = new Map(); // name -> { name, owner, online, ts, data }, se "datasett"
 const clients = new Set();
 const lastWriteLog = new Map();   // klient|tag -> siste loggede verdi  // { ws, role, name, subs:Set, owns:Set, alive }
 let clientSeq = 0;
@@ -806,6 +809,14 @@ function pushEvent(ev) {
   return e;
 }
 
+// ---------------------------------------------------------------- datasett
+// Det en adapter vet som ikke er én verdi: en liste eller en tabell, som PLS-ens diagnosebuffer
+// (adapters/plcdiag-adapter.js). Adapteren sender hele datasettet hver gang det endres; huben
+// holder siste utgave i minnet og sender den til HMI-ene som abonnerer på navnet, som på en tag.
+// Huben ser ikke på innholdet: widgeten som viser det, kjenner formatet. Ingenting lagres på disk.
+const DATASET_NAME = /^[A-Za-z_][\w.-]{0,80}$/;
+const datasetMsg = d => ({ type: 'dataset', name: d.name, owner: d.owner, online: d.online, ts: d.ts, data: d.data });
+
 // ---------------------------------------------------------------- protokoll
 function handle(c, msg) {
   switch (msg.type) {
@@ -841,6 +852,8 @@ function handle(c, msg) {
           unit: def.unit != null ? def.unit : (prev.unit != null ? prev.unit : ''),   // ikke ?? : kjører på Node 12
           description: def.description ? String(def.description) : '',   // fra adapteren, f.eks. layoutfilen
           deviceLabel: def.label ? String(def.label).trim().slice(0, 80) : '',   // enhetens eget navn, f.eks. fra PLS-en
+          // hvordan enheten foreslår at verdien vises: merket i navnet fra PLS-en, 'ERROR-diode {led}' gir 'led'
+          format: typeof def.format === 'string' && /^\w{1,20}$/.test(def.format) ? def.format : '',
           writable: !!def.writable,
           owner: c.name,
           value: prev.value,
@@ -887,6 +900,7 @@ function handle(c, msg) {
           send(c, { type: 'update', tag: t.name, value: t.value, ts: t.ts, quality: t.quality });
         }
       }
+      for (const d of datasets.values()) if (matches(c.subs, d.name)) send(c, datasetMsg(d));
       return;
     }
 
@@ -908,6 +922,37 @@ function handle(c, msg) {
       // hold-for-å-kjøre (hold-to-run) gjentar samme skriving flere ganger i sekundet: logg bare endringer
       const key = `${c.name}|${t.name}`, val = JSON.stringify(msg.value);
       if (lastWriteLog.get(key) !== val) { lastWriteLog.set(key, val); log(`[write] ${c.name} -> ${t.name} = ${val}`); }
+      return;
+    }
+
+    case 'dataset': {
+      // { name, data }: hele datasettet, hver gang det endres. Det forrige erstattes.
+      if (c.role !== 'adapter') return send(c, { type: 'error', message: 'only an adapter can publish a dataset' });
+      const name = String(msg.name || '');
+      if (!DATASET_NAME.test(name)) return send(c, { type: 'error', message: `dataset "${name.slice(0, 40)}": the name needs letters, digits, _ . - (like pls.diagbuffer)` });
+      if (!msg.data || typeof msg.data !== 'object') return send(c, { type: 'error', message: `dataset "${name}" has no data` });
+      const prev = datasets.get(name);
+      if (prev && prev.online && prev.owner !== c.name && isOnline(prev.owner)) {
+        return send(c, { type: 'error', message: `dataset "${name}" comes from ${prev.owner} already` });
+      }
+      const d = { name, owner: c.name, online: true, ts: now(), data: msg.data };
+      datasets.set(name, d);
+      c.sets.add(name);
+      if (!prev || prev.owner !== c.name || !prev.online) log(`[dataset] ${name} from ${c.name}`);
+      broadcastToHmi(datasetMsg(d), name);
+      return;
+    }
+
+    case 'datasetAction': {
+      // { name, action }: en knapp i en widget, f.eks. Refresh, sendt videre til adapteren bak datasettet
+      if (c.readonly) return send(c, { type: 'error', message: `${c.name} connected read-only` });
+      const d = datasets.get(String(msg.name));
+      if (!d) return send(c, { type: 'error', message: `no dataset "${msg.name}" (is the service that makes it running?)` });
+      let owner = null;
+      for (const o of clients) if (o.role === 'adapter' && o.name === d.owner) owner = o;
+      if (!owner) return send(c, { type: 'error', message: `${d.owner}, which makes "${d.name}", is offline` });
+      send(owner, { type: 'datasetAction', name: d.name, action: String(msg.action || ''), from: c.name });
+      log(`[dataset] ${c.name} -> ${d.name}: ${msg.action}`);
       return;
     }
 
@@ -1020,6 +1065,13 @@ function onDisconnect(c) {
       t.quality = 'bad';
       broadcastToHmi({ type: 'update', tag: name, value: t.value, ts: t.ts, quality: 'bad' }, name);
       markCalcInput(name);
+    }
+    // datasettene blir stående, merket med at adapteren er borte
+    for (const name of c.sets) {
+      const d = datasets.get(name);
+      if (!d || d.owner !== c.name) continue;
+      d.online = false;
+      broadcastToHmi(datasetMsg(d), name);
     }
     raiseAlarm('link:' + c.name, { kind: 'link', source: c.name, tag: null, severity: 'warning', text: 'Adapter disconnected' }, true);
     broadcastRegistry();
@@ -1185,6 +1237,13 @@ const server = http.createServer(async (req, res) => {
   }
 
   if (url.pathname === '/api/alarms') return json(res, 200, [...alarms.values()]);
+  // datasettene: navn, adapter og alder for alle, eller hele ett: /api/datasets/pls.diagbuffer
+  if (url.pathname === '/api/datasets') return json(res, 200, [...datasets.values()].map(d => ({ name: d.name, owner: d.owner, online: d.online, ts: d.ts })));
+  const dm = url.pathname.match(/^\/api\/datasets\/(.+)$/);
+  if (dm) {
+    const d = datasets.get(decodeURIComponent(dm[1]));
+    return d ? json(res, 200, datasetMsg(d)) : json(res, 404, { ok: false, error: 'no such dataset' });
+  }
   if (url.pathname === '/api/tags') return json(res, 200, registrySnapshot());
   if (url.pathname === '/api/events') return json(res, 200, events);
   if (url.pathname === '/api/history') {
@@ -1221,7 +1280,7 @@ const server = http.createServer(async (req, res) => {
 const wss = new WebSocketServer({ server });
 
 wss.on('connection', (ws, req) => {
-  const c = { ws, role: null, name: null, subs: new Set(), owns: new Set(), alive: true };
+  const c = { ws, role: null, name: null, subs: new Set(), owns: new Set(), sets: new Set(), alive: true };
   clients.add(c);
   ws.on('pong', () => { c.alive = true; });
   ws.on('message', raw => {

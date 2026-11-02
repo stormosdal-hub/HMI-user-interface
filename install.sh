@@ -3,7 +3,7 @@
 #
 #   kjøreverkets navn   /etc/kjoreverk/vehicle
 #   tjenestene          /etc/systemd/system/kjoreverk@.service og /etc/kjoreverk/instances/*.env:
-#                       hub, tcplink-adapter og recorder
+#                       hub, tcplink-adapter, plcdiag-adapter og recorder
 #   recorderen          /etc/kjoreverk/recorder.json: serveren og nøkkelen for dette kjøreverket
 #   klokka              tidsserveren, i systemd-timesyncd eller chrony
 #   loggene             i RAM, så journald ikke skriver til SD-kortet (ikke med --disk-logs)
@@ -43,13 +43,14 @@ HOST_RX='^[A-Za-z0-9._:-]+$'
 usage() {
   cat <<EOF
 Sets up this Raspberry Pi for a kjøreverk: the vehicle's name, the services (hub, tcplink-adapter,
-recorder), the recorder's server and key, the time server and the logs. Run it from the project
-folder, preferably $RECOMMENDED:
+plcdiag-adapter, recorder), the recorder's server and key, the time server and the logs. Run it from
+the project folder, preferably $RECOMMENDED:
 
   sudo bash $RECOMMENDED/install.sh [options]
 
   --vehicle NAME   the vehicle's name, e.g. kv_52 (alarm list, event log, central server)
-  --plc IP:PORT    the PLC (default: what is set up already, else "connect" in kjoreverk-options.json)
+  --plc IP:PORT    the PLC (default: what is set up already, else "connect" in kjoreverk-options.json);
+                   plcdiag-adapter reads its diagnostic buffer from the web server at the same address
   --server URL     the central server for the recorder, e.g. http://dbserver:8090
   --token KEY      this vehicle's key, made on the central server
   --no-recorder    don't run the recorder (stops it if it runs)
@@ -224,6 +225,7 @@ say "  project      $PROJECT"
 say "  services     run as $user, with Node $NODE_VERSION ($NODE)"
 say "  vehicle      $vehicle"
 say "  PLC          $plc"
+say "  diagnostics  https://${plc%:*}, the PLC's web server, when the PLC reports a fault"
 if [ $recorder -eq 1 ]; then say "  recorder     $server, $([ -n "$token" ] && echo 'key set' || echo 'NO KEY YET: the server will refuse the data')"
 else say "  recorder     not set up"
 fi
@@ -262,6 +264,7 @@ env_file() {   # env_file <instans> <SCRIPT_ARGS>
 }
 env_file hub "hmi-core/hub.js"
 env_file tcplink-adapter "hmi-core/adapters/tcplink-adapter.js --plc=$plc"
+env_file plcdiag-adapter "hmi-core/adapters/plcdiag-adapter.js --plc=$plc"
 env_file recorder "hmi-core/recorder.js"
 
 put "$UNIT" 644 <<EOF
@@ -359,7 +362,7 @@ step "Starting the services"
 for f in "$ETC"/instances/*.env; do
   [ -e "$f" ] || continue
   name=$(basename "$f" .env)
-  case $name in hub|tcplink-adapter|recorder) continue ;; esac
+  case $name in hub|tcplink-adapter|plcdiag-adapter|recorder) continue ;; esac
   script=$(awk -F= '$1 == "SCRIPT_ARGS" { sub(/^SCRIPT_ARGS=/, ""); gsub(/["'\'']/, ""); split($0, a, " "); print a[1]; exit }' "$f")
   [ -n "$script" ] || continue
   case $script in /*) path=$script ;; *) path=$PROJECT/$script ;; esac
@@ -369,7 +372,7 @@ for f in "$ETC"/instances/*.env; do
   fi
 done
 
-units=(kjoreverk@hub.service kjoreverk@tcplink-adapter.service)
+units=(kjoreverk@hub.service kjoreverk@tcplink-adapter.service kjoreverk@plcdiag-adapter.service)
 if [ $recorder -eq 1 ]; then
   units+=(kjoreverk@recorder.service)
 elif systemctl is-enabled --quiet kjoreverk@recorder.service 2>/dev/null || systemctl is-active --quiet kjoreverk@recorder.service 2>/dev/null; then

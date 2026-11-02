@@ -16,7 +16,7 @@ forklarer hva skriptet gjør, og hvordan det gjøres for hånd.
 | Hva | Verdi |
 |---|---|
 | Prosjektmappen | `/opt/kjoreverk` (med `install.sh`, denne filen og `hmi-core/`) |
-| Tjenestene | `kjoreverk@hub.service`, `kjoreverk@tcplink-adapter.service` (PLS-en) og `kjoreverk@recorder.service` (den sentrale serveren) |
+| Tjenestene | `kjoreverk@hub.service`, `kjoreverk@tcplink-adapter.service` (PLS-en), `kjoreverk@plcdiag-adapter.service` (PLS-ens diagnosebuffer, fra web-serveren) og `kjoreverk@recorder.service` (den sentrale serveren) |
 | Malenheten | `/etc/systemd/system/kjoreverk@.service` |
 | Kjøreverkets navn | `/etc/kjoreverk/vehicle` |
 | Kommandolinjen per tjeneste | `/etc/kjoreverk/instances/<navn>.env` |
@@ -100,7 +100,7 @@ sudo bash /opt/kjoreverk/install.sh --vehicle kv_53 --plc 10.0.123.51:2000 \
 | Valg | Hva |
 |---|---|
 | `--vehicle kv_53` | Kjøreverkets navn: en bokstav først, så bokstaver, sifre, `_`, `.` og `-`, høyst 32 tegn |
-| `--plc 10.0.123.51:2000` | PLS-ens adresse og port. Standard: den som står fra før, ellers `"connect"` i `kjoreverk-options.json` |
+| `--plc 10.0.123.51:2000` | PLS-ens adresse og port. Standard: den som står fra før, ellers `"connect"` i `kjoreverk-options.json`. Diagnosebufferen hentes fra web-serveren på samme adresse (`https://10.0.123.51`) |
 | `--server http://dbserver:8090` | Den sentrale serveren. Med den settes recorderen opp |
 | `--token <nøkkelen>` | Kjøreverkets nøkkel, laget på serveren |
 | `--no-recorder` | Ingen recorder. Kjører den, stoppes den; `recorder.json` blir liggende |
@@ -114,7 +114,7 @@ sudo bash /opt/kjoreverk/install.sh --vehicle kv_53 --plc 10.0.123.51:2000 \
 | Hva | Hvor |
 |---|---|
 | Kjøreverkets navn | `/etc/kjoreverk/vehicle` |
-| Kommandolinjen for huben, adapteren og recorderen | `/etc/kjoreverk/instances/hub.env`, `tcplink-adapter.env` (med `--plc=`) og `recorder.env` |
+| Kommandolinjen for huben, adapterne og recorderen | `/etc/kjoreverk/instances/hub.env`, `tcplink-adapter.env` og `plcdiag-adapter.env` (begge med `--plc=`), og `recorder.env` |
 | Malenheten, med prosjektmappen, brukeren og stien til `node` | `/etc/systemd/system/kjoreverk@.service` |
 | Serveren og nøkkelen, lesbar bare for brukeren (`640`, `root:pi`) | `/etc/kjoreverk/recorder.json` |
 | Tidsserveren (eller en linje i chrony, hvis Pi-en bruker chrony) | `/etc/systemd/timesyncd.conf.d/kjoreverk.conf` |
@@ -146,6 +146,8 @@ være.
   høyst 5 sekunder før den stopper; oppdater når serveren er tilgjengelig, ellers er det som lå
   i køen, borte.
 - **HMI-sidene som står åpne**, kjører den gamle koden til de lastes inn på nytt (F5).
+- **En ny tjeneste i oppdateringen,** som `kjoreverk@plcdiag-adapter` (PLS-ens diagnosebuffer),
+  settes opp og startes av skriptet, med samme PLS-adresse som de andre.
 - **Endre én ting:** for eksempel `sudo bash /opt/kjoreverk/install.sh --token <ny nøkkel>`.
 - **Endre HMI-prosjektet på alle Pi-ene:** `hmi-core/config/` kopieres med resten. Har noen
   lagret endringer i HMI-en på én Pi, kopier `hmi-core/config/` derfra først, ellers blir de
@@ -173,7 +175,7 @@ sudo bash /opt/kjoreverk/install.sh
 
 - `kjoreverk@.service` er en **mal**: `@` betyr at den kan startes flere ganger under
   forskjellige instansnavn (`%i`).
-- Hvert instansnavn (`hub`, `tcplink-adapter`, `recorder`) hører til en fil
+- Hvert instansnavn (`hub`, `tcplink-adapter`, `plcdiag-adapter`, `recorder`) hører til en fil
   `/etc/kjoreverk/instances/<navn>.env` med én linje: `SCRIPT_ARGS=...` — nøyaktig det du
   ellers ville skrevet etter `node`. Først skriptet, så argumentene til det, med mellomrom
   mellom: `SCRIPT_ARGS=hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000 --dump` er
@@ -200,6 +202,8 @@ echo kv_52 | sudo tee /etc/kjoreverk/vehicle
 echo 'SCRIPT_ARGS=hmi-core/hub.js' | sudo tee /etc/kjoreverk/instances/hub.env
 
 echo 'SCRIPT_ARGS=hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000' | sudo tee /etc/kjoreverk/instances/tcplink-adapter.env
+
+echo 'SCRIPT_ARGS=hmi-core/adapters/plcdiag-adapter.js --plc=10.0.123.51:2000' | sudo tee /etc/kjoreverk/instances/plcdiag-adapter.env
 ```
 
 - **Kjøreverkets navn** (`kv_52`) er det eneste som er forskjellig fra kjøreverk til kjøreverk,
@@ -208,6 +212,9 @@ echo 'SCRIPT_ARGS=hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000' |
   (tagprefikset, alarmene og hold-for-å-kjøre) står i
   `hmi-core/adapters/tcplink-options/kjoreverk-options.json`, som den finner av seg selv.
   `--plc=` overstyrer adressen der.
+- `plcdiag-adapter.js` henter PLS-ens diagnosebuffer fra web-serveren på samme adresse
+  (`https://10.0.123.51`; porten for TcpLink tas bort) når PLS-en melder en feil, og bare i
+  RAM. Se *PLS-diagnose* i `hmi-core/README.md`.
 
 ### 2. Malenheten
 
@@ -244,7 +251,7 @@ WantedBy=multi-user.target
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable --now kjoreverk@hub.service kjoreverk@tcplink-adapter.service
+sudo systemctl enable --now kjoreverk@hub.service kjoreverk@tcplink-adapter.service kjoreverk@plcdiag-adapter.service
 ```
 
 `enable` lager lenken som starter tjenesten ved oppstart (uten den starter tjenestene **ikke**
@@ -254,10 +261,10 @@ etter en omstart, selv om `start` får dem til å kjøre akkurat nå). `--now` g
 ### 4. Kontroller
 
 ```bash
-systemctl status kjoreverk@hub.service kjoreverk@tcplink-adapter.service
+systemctl status kjoreverk@hub.service kjoreverk@tcplink-adapter.service kjoreverk@plcdiag-adapter.service
 ```
 
-Begge skal vise `Active: active (running)` og `Loaded: ... enabled`.
+Alle skal vise `Active: active (running)` og `Loaded: ... enabled`.
 
 ## Recorderen (til den sentrale serveren)
 
@@ -364,7 +371,7 @@ kommer fortsatt fra malen. `install.sh` rører ikke tilleggsfilene.
 
 **Sjekk at tjenestene er slått på (overlever omstart) og kjører:**
 ```bash
-systemctl is-enabled kjoreverk@hub.service kjoreverk@tcplink-adapter.service kjoreverk@recorder.service
+systemctl is-enabled kjoreverk@hub.service kjoreverk@tcplink-adapter.service kjoreverk@plcdiag-adapter.service kjoreverk@recorder.service
 systemctl status 'kjoreverk@*'
 ```
 
@@ -378,6 +385,7 @@ ls -l /proc/<PID>/exe                    # skal peke til den node install.sh fan
 ```bash
 journalctl -u kjoreverk@hub.service -n 50 --no-pager
 journalctl -u kjoreverk@tcplink-adapter.service -n 50 --no-pager
+journalctl -u kjoreverk@plcdiag-adapter.service -n 50 --no-pager
 
 # følg loggene til alle tjenestene live mens du tester:
 journalctl -u 'kjoreverk@*' -f

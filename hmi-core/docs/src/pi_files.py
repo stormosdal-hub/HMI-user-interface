@@ -65,6 +65,8 @@ opt_entries = [
     (1, 'recorder.js', 'sender til den sentrale serveren', AMBER),
     (1, 'adapters/', '', INK),
     (2, 'tcplink-adapter.js', 'forbindelsen til PLS-en', AMBER),
+    (2, 'plcdiag-adapter.js', 'PLS-ens diagnosebuffer, fra web-serveren', AMBER),
+    (2, 'plcdiag-web.js', 'leser web-sidene; tilpasses hvis ny firmware endrer dem', INK2),
     (2, 'tcplink-options/', '', INK),
     (3, 'kjoreverk-options.json', 'alarmene, bitene i ZSW1, hold-for-å-kjøre og PLS-ens adresse', CYAN),
     (1, 'lib/', 'calc.js, record-rules.js og vehicle.js, som programmene bruker', INK2),
@@ -92,6 +94,7 @@ etc_entries = [
     (1, 'instances/', 'kommandolinjen til hver tjeneste, SCRIPT_ARGS=…', INK),
     (2, 'hub.env', 'hmi-core/hub.js', CYAN),
     (2, 'tcplink-adapter.env', 'hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000', CYAN),
+    (2, 'plcdiag-adapter.env', 'hmi-core/adapters/plcdiag-adapter.js --plc=10.0.123.51:2000', CYAN),
     (2, 'recorder.env', 'hmi-core/recorder.js', CYAN),
     (0, 'systemd/', '', INK),
     (1, 'system/', '', INK),
@@ -134,7 +137,7 @@ s.add(s.text(EX + EW / 2 + 12, TOP + etc_h + 40, 'malen, kommandolinjene og lenk
 # ---------------------------------------------------------------- tjenestene
 TY = SY + SH + 56
 GAP = 30
-TW = (W - 96 - 2 * GAP) / 3
+TW = (W - 96 - 3 * GAP) / 4
 services = [
     ('kjoreverk@hub', 'node hmi-core/hub.js', [
         'Huben og HMI-en: http://<pi>:8080.',
@@ -144,6 +147,10 @@ services = [
         'Forbindelsen til PLS-en, med navnene fra PLS-en.',
         'Leser kjoreverk-options.json.',
         ('Leser /etc/kjoreverk/vehicle.', INK3)], 'PLS-en, TCP port 2000'),
+    ('kjoreverk@plcdiag-adapter', 'node hmi-core/adapters/plcdiag-adapter.js --plc=…', [
+        'PLS-ens diagnosebuffer, når PLS-en melder en feil. Bare i RAM.',
+        'Leser web-sidene med plcdiag-web.js.',
+        ('Leser /etc/kjoreverk/vehicle.', INK3)], 'PLS-ens web-server, https'),
     ('kjoreverk@recorder', 'node hmi-core/recorder.js', [
         'Sender taggene og hendelsene til den sentrale serveren. Skriver ingenting til SD-kortet.',
         ('Leser /etc/kjoreverk/recorder.json og vehicle.', INK3)], 'den sentrale serveren'),

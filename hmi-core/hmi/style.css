@@ -958,3 +958,41 @@ body.run .widget.has-codes .wbody:focus-visible { outline: 2px solid var(--edit)
 .walarms .al-dot { width: 8px; height: 8px; }
 .plate .al-ackall { float: right; margin: -2px 0 -2px 8px; padding: 1px 10px; font-size: 12px; }
 .plate .al-ackall[hidden] { display: none; }
+
+/* ---------------------------------------------------------------- PLC diagnostics (plcdiag.js) */
+.wdiag { flex-direction: column; align-items: stretch; justify-content: flex-start; gap: 0; padding: 0; font-size: calc(13px * var(--fs-text)); }
+.dg-top { flex: none; display: flex; align-items: center; gap: 10px; padding: 6px 10px; border-bottom: 1px solid var(--line-soft); }
+.dg-sum { flex: 1; min-width: 0; color: var(--ink-3); font-size: 0.92em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dg-warn { color: var(--warn); }
+.dg-bad { color: var(--alarm); }
+.dg-refresh { flex: none; background: var(--panel-3); border: 1px solid var(--line); border-radius: var(--radius); padding: 3px 14px; font-size: 0.92em; }
+.dg-refresh:hover:not(:disabled) { border-color: var(--edit); }
+.dg-refresh:disabled { color: var(--ink-3); cursor: default; }
+.dg-list { flex: 1; min-height: 0; overflow-y: auto; }
+.dg-row {
+  display: grid; grid-template-columns: 2.6em 5.6em 6.8em 5.8em minmax(0, 1fr); gap: 0 10px; align-items: baseline;
+  padding: 4px 10px 4px 7px; border-bottom: 1px solid var(--line-soft); border-left: 3px solid transparent; cursor: pointer;
+}
+.dg-row:hover:not(.dg-head) { background: rgba(92, 200, 232, 0.05); }
+.dg-row.dg-head {
+  position: sticky; top: 0; z-index: 1; cursor: default; background: var(--panel-2);
+  color: var(--ink-3); font-size: 0.8em; text-transform: uppercase; letter-spacing: 0.06em;
+}
+.dg-row.error { border-left-color: var(--alarm); }
+.dg-row.warning { border-left-color: var(--warn); }
+.dg-row.out { color: var(--ink-2); }
+.dg-row.out .dg-st, .dg-row.gone .dg-no { color: var(--ink-3); }
+.dg-row.new { animation: dg-flash 1.6s ease-out; }
+@keyframes dg-flash { from { background: rgba(242, 180, 65, 0.25); } }
+.dg-no { color: var(--ink-3); text-align: right; font-variant-numeric: tabular-nums; }
+.dg-t { font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.dg-ev { overflow-wrap: anywhere; }
+.dg-long {
+  grid-column: 1 / -1; cursor: text; user-select: text;
+  margin: 5px 0 3px; padding: 8px 10px; border-radius: var(--radius); background: var(--panel);
+  white-space: pre-wrap; overflow-wrap: anywhere; color: var(--ink);
+  font: 0.95em/1.45 ui-monospace, "SFMono-Regular", Consolas, monospace;
+}
+.dg-meta { display: block; margin-bottom: 6px; color: var(--ink-3); font-family: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif; }
+.dg-empty { color: var(--ink-3); padding: 10px; }
+@media (prefers-reduced-motion: reduce) { .dg-row.new { animation: none; } }
