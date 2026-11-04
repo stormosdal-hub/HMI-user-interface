@@ -292,7 +292,9 @@ sudo chown root:pi /etc/kjoreverk/recorder.json
 sudo chmod 640 /etc/kjoreverk/recorder.json
 ```
 
-`hmi-core/config/recorder.example.json` viser alle innstillingene. En Pi som ble satt opp før
+`hmi-core/config/recorder.example.json` viser alle innstillingene, også `sendSeconds`: hvor ofte
+en batch sendes (standard 10). En endring gjelder etter `sudo systemctl restart kjoreverk@recorder`,
+og `install.sh` lar den stå. En Pi som ble satt opp før
 `install.sh`, kan ha filen i `/etc/hmi-recorder.json`; recorderen leser den hvis
 `/etc/kjoreverk/recorder.json` ikke finnes.
 

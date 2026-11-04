@@ -215,7 +215,7 @@ ved siden av den prosjektfilen den ble startet med.
 | Fil | Hva den er |
 |---|---|
 | `adapters/tcplink-options/kjoreverk-options.json` | Innstillingene for TcpLink-blokken på kjøreverket: alarmer på feil- og varselkoden, bitene i ZSW1, og hold-for-å-kjøre på joggebitene |
-| `config/hmi.json`, `config/codes.json`, `config/assets/` | Prosjektet huben starter med (se [1](#1-kom-i-gang)): skjermbildene for kjøreverket og *PLS diagnose*, og kodetekstene, også for CPU-diodene og OB80 |
+| `config/hmi.json`, `config/codes.json`, `config/assets/` | Prosjektet huben starter med (se [1](#1-kom-i-gang)): skjermbildene for kjøreverket, *PLS diagnose* og *Opplasting*, og kodetekstene, også for CPU-diodene og OB80 |
 
 Prosjektet ligger i `hmi-core/config/` bare for at `node hub.js` skal virke med en gang.
 Vil du kunne bytte ut kjernen uten å røre prosjektet, flytter du det ut av kjernemappen, som
@@ -885,7 +885,7 @@ den nye ikke finnes. [config/recorder.example.json](config/recorder.example.json
 | `server` | — (må stå) | Serverens adresse |
 | `token` | — | Nøkkelen for dette kjøreverket, laget på serveren |
 | `queueMB` | 64 | Hvor mye køen i RAM kan ta. Et punkt tar omtrent 100–130 byte, så 64 MB er omtrent en halv million punkter |
-| `sendSeconds` | 10 | Hvor ofte en batch sendes. Ligger det mye i køen, sendes den med en gang |
+| `sendSeconds` | 10 | Hvor ofte en batch sendes, i sekunder. Ligger det mye i køen, sendes den med en gang. Gjelder når recorderen starter: `sudo systemctl restart kjoreverk@recorder` |
 | `clockCheck` | `true` | `false`: stol på klokka uten å spørre systemet |
 | `hub` | `ws://localhost:8080` | Huben |
 
@@ -903,9 +903,31 @@ den lesbar bare for brukeren tjenesten kjører som (`chmod 640` og `chown root:<
 | `rec.dropped` | Verdier kastet siden oppstart fordi køen var full |
 | `rec.clock_synced` | Om klokka er synkronisert. Ingenting sendes før den er det |
 | `rec.rules_version` | Versjonen av reglene fra serveren |
+| `rec.next_batch` | Sekunder til neste batch. Er serveren borte, til neste forsøk. 0: sendes nå, eller så snart noe venter. Tom til klokka er synkronisert og reglene er hentet |
+
+Skjermbildet **Opplasting** viser dem, med nedtellingen stort og hendelsesloggen ved siden av.
 
 Recorderen skriver også i hendelsesloggen: når serveren er borte og tilbake, når reglene
 endres, når en pause begynner og slutter, når klokka hopper, og når køen er full.
+
+**Teste et strømbrudd.** Det serveren har bekreftet, er trygt. Det som venter i køen, er borte
+når strømmen går, og det som kommer tilbake, er det PLS-en har logget:
+
+1. Gjør vinduet større: `"sendSeconds": 60` i `/etc/kjoreverk/recorder.json`, og
+   `sudo systemctl restart kjoreverk@recorder`.
+2. Følg nedtellingen på *Opplasting*, og ta strømmen når den viser noen få sekunder. Da har
+   nesten et minutt ikke kommet til serveren.
+3. Når Pi-en er oppe igjen, viser nedtellingen `—` til klokka er synkronisert og reglene er
+   hentet. Hendelsesloggen sier `Restored … changes from the PLC history` (adapteren), og
+   kanskje `Filled in … from the hub's memory` (recorderen).
+4. På serveren: endringene i signalene i `histMask` er med også for minuttet som var tapt, med
+   `src` 1 (fra ringen i PLS-en) eller 2 (fra hubens minne). Analoge verdier logges ikke i
+   PLS-en, så de har et hull fra siste batch til Pi-en var oppe igjen.
+5. Sett `sendSeconds` tilbake, og start recorderen på nytt.
+
+Stopper bare recorderen (`sudo systemctl kill -s KILL kjoreverk@recorder`), har huben alt i
+minnet: recorderen fyller hullet derfra når den starter igjen, også de analoge verdiene, så
+langt de siste 600 endringene av hver tag rekker.
 
 `install.sh` setter den opp som en tjeneste (`kjoreverk@recorder.service`) når den får
 serverens adresse. Se `README_systemd-service.md` ved siden av `hmi-core`.

@@ -521,6 +521,196 @@
           }
         }
       ]
+    },
+    {
+      "id": "upload",
+      "name": "Opplasting",
+      "widgets": [
+        {
+          "id": "upload-next",
+          "type": "value",
+          "x": 20,
+          "y": 20,
+          "w": 400,
+          "h": 200,
+          "props": {
+            "label": "Neste batch til serveren om",
+            "tag": "rec.next_batch",
+            "unit": "s",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 240
+          }
+        },
+        {
+          "id": "upload-queue",
+          "type": "value",
+          "x": 20,
+          "y": 232,
+          "w": 195,
+          "h": 106,
+          "props": {
+            "label": "Venter i RAM",
+            "tag": "rec.queue",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "upload-queue-pct",
+          "type": "value",
+          "x": 225,
+          "y": 232,
+          "w": 195,
+          "h": 106,
+          "props": {
+            "label": "Køen er full",
+            "tag": "rec.queue_pct",
+            "unit": "%",
+            "decimals": 1,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "upload-server",
+          "type": "value",
+          "x": 20,
+          "y": 350,
+          "w": 195,
+          "h": 106,
+          "props": {
+            "label": "Serveren",
+            "tag": "rec.server",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "upload-dropped",
+          "type": "value",
+          "x": 225,
+          "y": 350,
+          "w": 195,
+          "h": 106,
+          "props": {
+            "label": "Kastet (køen full)",
+            "tag": "rec.dropped",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "upload-last-ack",
+          "type": "value",
+          "x": 20,
+          "y": 468,
+          "w": 400,
+          "h": 106,
+          "props": {
+            "label": "Sist lagret på serveren",
+            "tag": "rec.last_ack",
+            "unit": "",
+            "decimals": 0,
+            "warnAbove": "",
+            "warnBelow": "",
+            "color": "",
+            "format": "decimal",
+            "codeList": "",
+            "codeShow": "number and text",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "upload-clock",
+          "type": "led",
+          "x": 20,
+          "y": 586,
+          "w": 195,
+          "h": 114,
+          "props": {
+            "label": "Klokka",
+            "tag": "rec.clock_synced",
+            "onValue": "",
+            "color": "",
+            "onText": "Synkronisert",
+            "offText": "Ikke synkronisert",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "upload-link",
+          "type": "led",
+          "x": 225,
+          "y": 586,
+          "w": 195,
+          "h": 114,
+          "props": {
+            "label": "Linken til PLS-en",
+            "tag": "${pls}.link",
+            "onValue": "",
+            "color": "",
+            "onText": "Data fra PLS-en",
+            "offText": "Ingen data",
+            "labelSize": 100,
+            "textSize": 100
+          }
+        },
+        {
+          "id": "upload-events",
+          "type": "events",
+          "x": 440,
+          "y": 20,
+          "w": 820,
+          "h": 680,
+          "props": {
+            "label": "Hendelser",
+            "source": "",
+            "minSeverity": "info",
+            "rows": 24,
+            "labelSize": 100,
+            "textSize": 100
+          }
+        }
+      ]
     }
   ],
   "calcs": [

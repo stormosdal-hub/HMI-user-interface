@@ -611,6 +611,17 @@ async function pump() {
 setInterval(pump, 250);
 setInterval(() => { if (live) { live.tick(Date.now(), mono()); updatePauses(); } }, 250);
 
+// Sekunder til neste batch, slik pump() vil gjøre det: sendSeconds etter forrige batch, eller neste
+// forsøk når serveren ikke har svart. 0: sendes nå, eller så snart noe venter i køen. null: ingenting
+// sendes før klokka er synkronisert og reglene er hentet.
+function nextBatch() {
+  if (stopping || (inflight && busy)) return 0;
+  if (!clockOk() || !rulesReady()) return null;
+  const now = mono();
+  const at = Math.max(waitUntil, inflight || lastBatchFull ? now : lastBatchAt + SEND_EVERY);
+  return Math.max(0, Math.ceil((at - now) / 1000));
+}
+
 // ---------------------------------------------------------------- huben
 const HUB_HTTP = HUB.replace(/^ws/, 'http').replace(/\/+$/, '');
 let reader = null, readerOpen = false, readerSince = null;
@@ -692,6 +703,9 @@ const STATUS_TAGS = [
   { name: 'rec.dropped', dataType: 'number', description: 'Values dropped since the recorder started, because the queue was full' },
   { name: 'rec.clock_synced', dataType: 'boolean', description: 'Whether this machine’s clock is synchronized. Nothing is sent until it is' },
   { name: 'rec.rules_version', dataType: 'number', description: 'The version of the recording rules from the server' },
+  { name: 'rec.next_batch', dataType: 'number', unit: 's',
+    description: `Seconds until the next batch goes to the central server (sendSeconds: every ${SEND_EVERY / 1000} s). ` +
+      '0: being sent, or as soon as something is waiting. Empty until the clock is synchronized and the rules are loaded' },
 ];
 let lastStatus = '';
 function publishStatus(force) {
@@ -711,6 +725,16 @@ function publishStatus(force) {
   service.send(JSON.stringify({ type: 'update', values }));
 }
 setInterval(publishStatus, 2000);
+// nedtellingen for seg selv: den endrer seg hvert sekund, resten sjelden
+let lastNext;
+function publishNext(force) {
+  if (!serviceOpen) return;
+  const v = nextBatch();
+  if (!force && v === lastNext) return;
+  lastNext = v;
+  service.send(JSON.stringify({ type: 'update', values: { 'rec.next_batch': v } }));
+}
+setInterval(publishNext, 200);
 function hubEvent(severity, message) {
   log(`[${severity}] ${message}`);
   if (serviceOpen) service.send(JSON.stringify({ type: 'event', severity, message }));
@@ -730,6 +754,7 @@ function connectService() {
     service.send(JSON.stringify({ type: 'hello', role: 'adapter', name: 'rec', serves: ['history'] }));
     service.send(JSON.stringify({ type: 'register', tags: STATUS_TAGS }));
     publishStatus(true);
+    publishNext(true);
   });
   service.on('message', data => {
     let m; try { m = JSON.parse(data); } catch (e) { return; }
@@ -751,7 +776,7 @@ function stop(sig) {
 process.on('SIGINT', () => stop('SIGINT'));
 process.on('SIGTERM', () => stop('SIGTERM'));
 
-log(`recorder ${VERSION} for ${VEHICLE}: hub ${HUB}, server ${SERVER}, queue up to ${QUEUE_MB} MB${SETTINGS_FILE ? `, settings from ${SETTINGS_FILE}` : ''}`);
+log(`recorder ${VERSION} for ${VEHICLE}: hub ${HUB}, server ${SERVER}, a batch every ${SEND_EVERY / 1000} s, queue up to ${QUEUE_MB} MB${SETTINGS_FILE ? `, settings from ${SETTINGS_FILE}` : ''}`);
 checkClock();
 setInterval(checkClock, SYNC_EVERY);
 connectReader();
