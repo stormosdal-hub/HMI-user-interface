@@ -158,6 +158,7 @@ gjenbrukbar.
 ```
 /opt/kjoreverk/              prosjektmappen på Pi-en
   install.sh                 setter opp Pi-en: navnet, tjenestene, recorderen, klokka
+  batch-interval.sh          hvor ofte recorderen sender en batch (sendSeconds)
   README_systemd-service.md  installasjonen og tjenestene
   hmi-core/
     hub.js           program: huben og HMI-en            node hub.js
@@ -885,7 +886,7 @@ den nye ikke finnes. [config/recorder.example.json](config/recorder.example.json
 | `server` | — (må stå) | Serverens adresse |
 | `token` | — | Nøkkelen for dette kjøreverket, laget på serveren |
 | `queueMB` | 64 | Hvor mye køen i RAM kan ta. Et punkt tar omtrent 100–130 byte, så 64 MB er omtrent en halv million punkter |
-| `sendSeconds` | 10 | Hvor ofte en batch sendes, i sekunder. Ligger det mye i køen, sendes den med en gang. Gjelder når recorderen starter: `sudo systemctl restart kjoreverk@recorder` |
+| `sendSeconds` | 10 | Hvor ofte en batch sendes, i sekunder. Ligger det mye i køen, sendes den med en gang. Sett den med `sudo bash /opt/kjoreverk/batch-interval.sh 60` (se under) |
 | `clockCheck` | `true` | `false`: stol på klokka uten å spørre systemet |
 | `hub` | `ws://localhost:8080` | Huben |
 
@@ -908,13 +909,13 @@ den lesbar bare for brukeren tjenesten kjører som (`chmod 640` og `chown root:<
 Skjermbildet **Opplasting** viser dem, med nedtellingen stort og hendelsesloggen ved siden av.
 
 Recorderen skriver også i hendelsesloggen: når serveren er borte og tilbake, når reglene
-endres, når en pause begynner og slutter, når klokka hopper, og når køen er full.
+endres, når en pause begynner og slutter, når klokka hopper, når køen er full, og når
+intervallet endres.
 
 **Teste et strømbrudd.** Det serveren har bekreftet, er trygt. Det som venter i køen, er borte
 når strømmen går, og det som kommer tilbake, er det PLS-en har logget:
 
-1. Gjør vinduet større: `"sendSeconds": 60` i `/etc/kjoreverk/recorder.json`, og
-   `sudo systemctl restart kjoreverk@recorder`.
+1. Gjør vinduet større: `sudo bash /opt/kjoreverk/batch-interval.sh 60`.
 2. Følg nedtellingen på *Opplasting*, og ta strømmen når den viser noen få sekunder. Da har
    nesten et minutt ikke kommet til serveren.
 3. Når Pi-en er oppe igjen, viser nedtellingen `—` til klokka er synkronisert og reglene er
@@ -923,11 +924,24 @@ når strømmen går, og det som kommer tilbake, er det PLS-en har logget:
 4. På serveren: endringene i signalene i `histMask` er med også for minuttet som var tapt, med
    `src` 1 (fra ringen i PLS-en) eller 2 (fra hubens minne). Analoge verdier logges ikke i
    PLS-en, så de har et hull fra siste batch til Pi-en var oppe igjen.
-5. Sett `sendSeconds` tilbake, og start recorderen på nytt.
+5. Sett intervallet tilbake: `sudo bash /opt/kjoreverk/batch-interval.sh 10`.
 
 Stopper bare recorderen (`sudo systemctl kill -s KILL kjoreverk@recorder`), har huben alt i
 minnet: recorderen fyller hullet derfra når den starter igjen, også de analoge verdiene, så
 langt de siste 600 endringene av hver tag rekker.
+
+**Intervallet** setter du med en kommando, uten å redigere filen:
+
+```bash
+bash /opt/kjoreverk/batch-interval.sh            # viser det
+sudo bash /opt/kjoreverk/batch-interval.sh 60    # en batch hvert 60. sekund, fra nå av
+sudo bash /opt/kjoreverk/batch-interval.sh 10    # tilbake til standard
+```
+
+Den skriver `sendSeconds` i `recorder.json` og sender recorderen SIGHUP, så den leser
+intervallet på nytt uten å starte på nytt: det som venter i køen, blir stående, og
+nedtellingen følger med med en gang. `install.sh` lar `sendSeconds` stå når den kjøres på nytt.
+Andre endringer i filen gjelder når recorderen starter (`sudo systemctl restart kjoreverk@recorder`).
 
 `install.sh` setter den opp som en tjeneste (`kjoreverk@recorder.service`) når den får
 serverens adresse. Se `README_systemd-service.md` ved siden av `hmi-core`.

@@ -15,12 +15,12 @@ forklarer hva skriptet gjør, og hvordan det gjøres for hånd.
 
 | Hva | Verdi |
 |---|---|
-| Prosjektmappen | `/opt/kjoreverk` (med `install.sh`, denne filen og `hmi-core/`) |
+| Prosjektmappen | `/opt/kjoreverk` (med `install.sh`, `batch-interval.sh`, denne filen og `hmi-core/`) |
 | Tjenestene | `kjoreverk@hub.service`, `kjoreverk@tcplink-adapter.service` (PLS-en), `kjoreverk@plcdiag-adapter.service` (PLS-ens diagnosebuffer, fra web-serveren) og `kjoreverk@recorder.service` (den sentrale serveren) |
 | Malenheten | `/etc/systemd/system/kjoreverk@.service` |
 | Kjøreverkets navn | `/etc/kjoreverk/vehicle` |
 | Kommandolinjen per tjeneste | `/etc/kjoreverk/instances/<navn>.env` |
-| Recorderens oppsett | `/etc/kjoreverk/recorder.json` (serveren og nøkkelen) |
+| Recorderens oppsett | `/etc/kjoreverk/recorder.json` (serveren, nøkkelen og `sendSeconds`) |
 | Tidsserveren | `10.0.0.104`, i `/etc/systemd/timesyncd.conf.d/kjoreverk.conf` |
 | Loggene | i RAM: `/etc/systemd/journald.conf.d/kjoreverk.conf` |
 | Brukeren tjenestene kjører som | den som kjørte `sudo bash install.sh`, vanligvis `pi` |
@@ -292,9 +292,10 @@ sudo chown root:pi /etc/kjoreverk/recorder.json
 sudo chmod 640 /etc/kjoreverk/recorder.json
 ```
 
-`hmi-core/config/recorder.example.json` viser alle innstillingene, også `sendSeconds`: hvor ofte
-en batch sendes (standard 10). En endring gjelder etter `sudo systemctl restart kjoreverk@recorder`,
-og `install.sh` lar den stå. En Pi som ble satt opp før
+`hmi-core/config/recorder.example.json` viser alle innstillingene. Hvor ofte en batch sendes
+(`sendSeconds`, standard 10 s), setter du med `sudo bash /opt/kjoreverk/batch-interval.sh 60`;
+recorderen tar det med en gang, uten omstart, og `install.sh` lar det stå. Andre endringer i filen
+gjelder etter `sudo systemctl restart kjoreverk@recorder`. En Pi som ble satt opp før
 `install.sh`, kan ha filen i `/etc/hmi-recorder.json`; recorderen leser den hvis
 `/etc/kjoreverk/recorder.json` ikke finnes.
 
@@ -435,6 +436,7 @@ Alle skal være `active (running)` uten at du har kjørt noen kommandoer for hå
 | Oppgave | Kommando |
 |---|---|
 | Sett opp eller oppdater Pi-en | `sudo bash /opt/kjoreverk/install.sh` |
+| Hvor ofte recorderen sender en batch | `bash /opt/kjoreverk/batch-interval.sh` (vis), `sudo bash /opt/kjoreverk/batch-interval.sh 60` (sett) |
 | Start alle tjenestene på nytt | `sudo systemctl restart 'kjoreverk@*'` |
 | Start en tjeneste nå | `sudo systemctl start kjoreverk@<navn>.service` |
 | Stopp en tjeneste | `sudo systemctl stop kjoreverk@<navn>.service` |

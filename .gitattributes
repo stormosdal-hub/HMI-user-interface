@@ -1,2 +1,2 @@
-# install.sh kjøres med bash på Pi-en: Windows-linjeskift ville stoppe den
+# install.sh og batch-interval.sh kjøres med bash på Pi-en: Windows-linjeskift ville stoppe dem
 *.sh text eol=lf

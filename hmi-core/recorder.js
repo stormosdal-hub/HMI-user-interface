@@ -25,6 +25,8 @@
  * Pi som ble satt opp før, ellers config/recorder.json. Kjøreverkets id er
  * kjøreverkets navn i /etc/kjoreverk/vehicle (det adapteren og huben også bruker), eller
  * vertsnavnet. "vehicle" i filen, --vehicle, --server, --token og --queue-mb overstyrer.
+ * SIGHUP leser sendSeconds fra filen på nytt, uten omstart; batch-interval.sh ved siden av
+ * install.sh skriver den og sender signalet. Resten av filen gjelder fra neste oppstart.
  *
  * Kjører på Node 10, som huben.
  */
@@ -52,12 +54,13 @@ const opt = name => { const i = args.indexOf(name); return i >= 0 && i + 1 < arg
 const log = (...a) => console.log(new Date().toISOString().slice(11, 19), ...a);
 
 const SETTINGS_DEFAULT = '/etc/kjoreverk/recorder.json';
+const parseSettings = f => JSON.parse(fs.readFileSync(f, 'utf8').replace(/^\uFEFF/, ''));
 function readSettings() {
   const given = opt('--config') || process.env.HMI_RECORDER_CONFIG;
   const files = given ? [given] : [SETTINGS_DEFAULT, '/etc/hmi-recorder.json', path.join(__dirname, 'config', 'recorder.json')];
   for (const f of files) {
     if (!given && !fs.existsSync(f)) continue;
-    try { return { file: f, s: JSON.parse(fs.readFileSync(f, 'utf8').replace(/^﻿/, '')) }; }
+    try { return { file: f, s: parseSettings(f) }; }
     catch (e) { console.error(`The recorder's settings in ${f} can't be read: ${e.message}`); process.exit(1); }
   }
   return { file: null, s: {} };
@@ -76,7 +79,8 @@ if (!/^https?:\/\/[^/]+/.test(SERVER)) {
 if (!TOKEN) log(`warning: no key ("token") for ${VEHICLE}; the server will refuse the data until one is set`);
 
 const QUEUE_BYTES = QUEUE_MB * 1024 * 1024;
-const SEND_EVERY = (Number(settings.sendSeconds) > 0 ? Number(settings.sendSeconds) : 10) * 1000;   // en batch så ofte, eller med en gang når det er mye
+const sendEveryOf = s => (Number(s.sendSeconds) > 0 ? Number(s.sendSeconds) : 10) * 1000;
+let sendEvery = sendEveryOf(settings);  // en batch så ofte, eller med en gang når det er mye; SIGHUP leser den på nytt
 const BATCH_ITEMS = 20000;              // høyst så mange punkter per batch
 const SYNC_EVERY = 60000;               // spør om klokka er synkronisert
 const UNSYNCED_AFTER = 10 * 60000;      // svarer serveren, men klokka blir ikke synkronisert: send likevel etter så lenge
@@ -595,7 +599,7 @@ async function pump() {
     if (!backfilled && rulesReady() && readerOpen && registry.size && lastTs !== undefined) await backfill();
     if (!inflight) {
       const work = queue.length || gapsPending.length || catalogDirty;
-      const due = stopping || lastBatchFull || mono() - lastBatchAt >= SEND_EVERY;
+      const due = stopping || lastBatchFull || mono() - lastBatchAt >= sendEvery;
       if (!work || !due || !rulesReady()) return;
       lastBatchAt = mono();
       inflight = takeBatch();
@@ -618,7 +622,7 @@ function nextBatch() {
   if (stopping || (inflight && busy)) return 0;
   if (!clockOk() || !rulesReady()) return null;
   const now = mono();
-  const at = Math.max(waitUntil, inflight || lastBatchFull ? now : lastBatchAt + SEND_EVERY);
+  const at = Math.max(waitUntil, inflight || lastBatchFull ? now : lastBatchAt + sendEvery);
   return Math.max(0, Math.ceil((at - now) / 1000));
 }
 
@@ -703,10 +707,11 @@ const STATUS_TAGS = [
   { name: 'rec.dropped', dataType: 'number', description: 'Values dropped since the recorder started, because the queue was full' },
   { name: 'rec.clock_synced', dataType: 'boolean', description: 'Whether this machine’s clock is synchronized. Nothing is sent until it is' },
   { name: 'rec.rules_version', dataType: 'number', description: 'The version of the recording rules from the server' },
-  { name: 'rec.next_batch', dataType: 'number', unit: 's',
-    description: `Seconds until the next batch goes to the central server (sendSeconds: every ${SEND_EVERY / 1000} s). ` +
-      '0: being sent, or as soon as something is waiting. Empty until the clock is synchronized and the rules are loaded' },
 ];
+// beskrivelsen har intervallet, så den meldes på nytt når det endres
+const nextBatchTag = () => ({ name: 'rec.next_batch', dataType: 'number', unit: 's',
+  description: `Seconds until the next batch goes to the central server (sendSeconds: every ${sendEvery / 1000} s). ` +
+    '0: being sent, or as soon as something is waiting. Empty until the clock is synchronized and the rules are loaded' });
 let lastStatus = '';
 function publishStatus(force) {
   if (!serviceOpen) return;
@@ -752,7 +757,7 @@ function connectService() {
   service.on('open', () => {
     serviceOpen = true;
     service.send(JSON.stringify({ type: 'hello', role: 'adapter', name: 'rec', serves: ['history'] }));
-    service.send(JSON.stringify({ type: 'register', tags: STATUS_TAGS }));
+    service.send(JSON.stringify({ type: 'register', tags: STATUS_TAGS.concat(nextBatchTag()) }));
     publishStatus(true);
     publishNext(true);
   });
@@ -775,8 +780,21 @@ function stop(sig) {
 }
 process.on('SIGINT', () => stop('SIGINT'));
 process.on('SIGTERM', () => stop('SIGTERM'));
+// SIGHUP (batch-interval.sh): sendSeconds fra filen på nytt. Køen blir stående, og nedtellingen
+// regner fra forrige batch med det nye intervallet.
+process.on('SIGHUP', () => {
+  if (!SETTINGS_FILE) return log('SIGHUP: there is no settings file to read sendSeconds from');
+  let next;
+  try { next = sendEveryOf(parseSettings(SETTINGS_FILE)); }
+  catch (e) { return log(`SIGHUP: ${SETTINGS_FILE} can't be read (${e.message}); still a batch every ${sendEvery / 1000} s`); }
+  if (next === sendEvery) return log(`SIGHUP: still a batch every ${next / 1000} s`);
+  sendEvery = next;
+  hubEvent('info', `The recorder sends a batch every ${next / 1000} s from now on (sendSeconds)`);
+  if (serviceOpen) service.send(JSON.stringify({ type: 'register', tags: [nextBatchTag()] }));
+  publishNext();
+});
 
-log(`recorder ${VERSION} for ${VEHICLE}: hub ${HUB}, server ${SERVER}, a batch every ${SEND_EVERY / 1000} s, queue up to ${QUEUE_MB} MB${SETTINGS_FILE ? `, settings from ${SETTINGS_FILE}` : ''}`);
+log(`recorder ${VERSION} for ${VEHICLE}: hub ${HUB}, server ${SERVER}, a batch every ${sendEvery / 1000} s, queue up to ${QUEUE_MB} MB${SETTINGS_FILE ? `, settings from ${SETTINGS_FILE}` : ''}`);
 checkClock();
 setInterval(checkClock, SYNC_EVERY);
 connectReader();

@@ -58,8 +58,9 @@ start = len(s.parts)        # panelene tegnes bak innholdet når høyden er kjen
 OX, OW = 48, 742
 opt_entries = [
     (0, 'install.sh', 'setter opp Pi-en', GREEN),
+    (0, 'batch-interval.sh', 'hvor ofte recorderen sender en batch', GREEN),
     (0, 'README_systemd-service.md', 'installasjonen og tjenestene', INK2),
-    (0, '.gitattributes', 'holder install.sh med Unix-linjeskift', INK2),
+    (0, '.gitattributes', 'holder skriptene med Unix-linjeskift', INK2),
     (0, 'hmi-core/', '', INK),
     (1, 'hub.js', 'huben og HMI-en', AMBER),
     (1, 'recorder.js', 'sender til den sentrale serveren', AMBER),
@@ -90,7 +91,7 @@ EX, EW = 830, 722
 etc_entries = [
     (0, 'kjoreverk/', '', INK),
     (1, 'vehicle', 'kjøreverkets navn: kv_52', CYAN),
-    (1, 'recorder.json', 'serveren og nøkkelen; bare brukeren kan lese den (640, root:pi)', CYAN),
+    (1, 'recorder.json', 'serveren, nøkkelen og sendSeconds; bare brukeren kan lese den (640, root:pi)', CYAN),
     (1, 'instances/', 'kommandolinjen til hver tjeneste, SCRIPT_ARGS=…', INK),
     (2, 'hub.env', 'hmi-core/hub.js', CYAN),
     (2, 'tcplink-adapter.env', 'hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000', CYAN),
