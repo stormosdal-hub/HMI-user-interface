@@ -336,7 +336,8 @@ function clockJump(d) {
 setInterval(() => {
   const off = Date.now() - mono(), d = off - clock.offset;
   clock.offset = off;
-  if (Math.abs(d) >= 1000) clockJump(d);
+  // hele millisekunder: d er målt med performance.now() og har desimaler, og tidene serveren får, må være hele
+  if (Math.abs(d) >= 1000) clockJump(Math.round(d));
 }, 1000);
 function setSynced(v, how) {
   if (clock.synced === v) return;
@@ -500,12 +501,12 @@ function payload(b) {
   const series = {}, text = {}, events = [];
   for (const it of b.items) {
     if (it.k === 'ev') {
-      const e = { ts: it.ts, source: it.source, severity: it.severity, message: it.message };
+      const e = { ts: Math.round(it.ts), source: it.source, severity: it.severity, message: it.message };
       if (it.src) e.src = it.src;
       events.push(e);
       continue;
     }
-    const p = [it.ts, it.v];
+    const p = [Math.round(it.ts), it.v];
     if (it.q || it.src) p.push(it.q || 0);
     if (it.src) p.push(it.src);
     const into = it.k === 'txt' ? text : series;
@@ -516,7 +517,7 @@ function payload(b) {
   if (Object.keys(series).length) body.series = series;
   if (Object.keys(text).length) body.text = text;
   if (events.length) body.events = events;
-  if (b.gaps.length) body.gaps = b.gaps;
+  if (b.gaps.length) body.gaps = b.gaps.map(g => Object.assign({}, g, { from: Math.round(g.from), to: Math.round(g.to) }));
   return body;
 }
 async function sendBatch() {
