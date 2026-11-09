@@ -7,6 +7,9 @@
 #   recorderen          /etc/kjoreverk/recorder.json: serveren og nøkkelen for dette kjøreverket
 #   klokka              tidsserveren, i systemd-timesyncd eller chrony
 #   loggene             i RAM, så journald ikke skriver til SD-kortet (ikke med --disk-logs)
+#   Bluetooth           HMI-et for nettbrett på http://192.168.1.<kjøreverksnummer>:8080, paret med en
+#                       PIN-kode per kjøreverk: bluetooth/ i /usr/local/lib/kjoreverk-bt og
+#                       /etc/kjoreverk/bt.json (ikke med --no-bluetooth)
 #
 # Den kjøres fra prosjektmappen, helst /opt/kjoreverk, og setter opp tjenestene for mappen den
 # ligger i:
@@ -33,18 +36,26 @@ JOURNALD_CONF=/etc/systemd/journald.conf.d/kjoreverk.conf
 CHRONY_MARK='# the time server for the kjøreverk (install.sh)'
 DEFAULT_NTP=10.0.0.104
 HUB_PORT=8080
+BT_LIB=/usr/local/lib/kjoreverk-bt                    # programmene kjører som root, så de ligger ikke i prosjektmappen
+BT_JSON=$ETC/bt.json
+BT_UNIT=/etc/systemd/system/kjoreverk-bt.service
+BT_DHCP_UNIT=/etc/systemd/system/kjoreverk-bt-dhcp.service
+BT_POOL_FIRST=200                                     # nettbrettene får .200 og oppover (bluetooth/btnet.py)
+DHCPCD_CONF=/etc/dhcpcd.conf
+DHCP_HELPER_DEFAULT=/etc/default/dhcp-helper
 
 VEHICLE_RX='^[A-Za-z_][A-Za-z0-9_.-]{0,31}$'            # som lib/vehicle.js
 VEHICLE_RULE='a letter first, then letters, digits, _ . -; at most 32 characters'
 PLC_RX='^[A-Za-z0-9._-]+:[0-9]{1,5}$'
 SERVER_RX='^https?://[^/[:space:]]+[^[:space:]]*$'
 HOST_RX='^[A-Za-z0-9._:-]+$'
+PIN_RX='^[0-9]{4,16}$'
 
 usage() {
   cat <<EOF
 Sets up this Raspberry Pi for a kjøreverk: the vehicle's name, the services (hub, tcplink-adapter,
-plcdiag-adapter, recorder), the recorder's server and key, the time server and the logs. Run it from
-the project folder, preferably $RECOMMENDED:
+plcdiag-adapter, recorder), the recorder's server and key, the time server, the logs and the HMI over
+Bluetooth. Run it from the project folder, preferably $RECOMMENDED:
 
   sudo bash $RECOMMENDED/install.sh [options]
 
@@ -57,7 +68,10 @@ the project folder, preferably $RECOMMENDED:
   --user NAME      the user the services run as (default: the one already set up, else you)
   --ntp HOST       the time server (default $DEFAULT_NTP)
   --disk-logs      let journald keep the logs on the SD card (default: in RAM, gone after a restart)
-  -y, --yes        don't ask; use what is given and what is set up already
+  --no-bluetooth   no HMI over Bluetooth (stops it if it runs; it stays off when this is run again)
+  --bluetooth      the HMI over Bluetooth on again after --no-bluetooth (it is on by default)
+  --bt-pin PIN     the PIN a tablet types once to pair, 4-16 digits (default: the one set up, else a new one)
+  -y, --yes       don't ask; use what is given and what is set up already
   -h, --help       this text
 
 Without options it asks for what is missing. Running it again keeps what is set up and restarts
@@ -71,13 +85,13 @@ warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------- valgene
-vehicle='' plc='' server='' token='' user='' ntp='' no_recorder=0 disk_logs=0 yes=0
+vehicle='' plc='' server='' token='' user='' ntp='' no_recorder=0 disk_logs=0 yes=0 bt_flag='' bt_pin=''
 while [ $# -gt 0 ]; do
   arg=$1; shift
   val=''
   case $arg in --*=*) val=${arg#*=}; arg=${arg%%=*} ;; esac
   case $arg in
-    --vehicle|--plc|--server|--token|--user|--ntp)
+    --vehicle|--plc|--server|--token|--user|--ntp|--bt-pin)
       if [ -z "$val" ]; then
         [ $# -gt 0 ] || die "$arg needs a value (see --help)"
         val=$1; shift
@@ -89,9 +103,12 @@ while [ $# -gt 0 ]; do
         --token)   token=$val ;;
         --user)    user=$val ;;
         --ntp)     ntp=$val ;;
+        --bt-pin)  bt_pin=$val ;;
       esac ;;
     --no-recorder) no_recorder=1 ;;
     --disk-logs)   disk_logs=1 ;;
+    --bluetooth)    bt_flag=on ;;
+    --no-bluetooth) bt_flag=off ;;
     -y|--yes)      yes=1 ;;
     -h|--help)     usage; exit 0 ;;
     *)             die "unknown option $arg (see --help)" ;;
@@ -123,7 +140,7 @@ json_field() {
     try { s = JSON.parse(fs.readFileSync(process.argv[1], "utf8").replace(/^﻿/, "")); }
     catch (e) { if (e.code === "ENOENT") process.exit(0); console.error(process.argv[1] + ": " + e.message); process.exit(1); }
     const v = s && s[process.argv[2]];
-    if (typeof v === "string") process.stdout.write(v);
+    if (typeof v === "string" || typeof v === "boolean") process.stdout.write(String(v));
   ' "$1" "$2"
 }
 
@@ -154,6 +171,14 @@ cur_user=''
 
 cur_ntp=''
 [ -f "$TIMESYNCD_CONF" ] && cur_ntp=$(awk -F= '$1 == "NTP" { print $2; exit }' "$TIMESYNCD_CONF")
+
+cur_bt_pin='' cur_bt_enabled='' cur_bt_address='' cur_bt_name=''
+if [ -f "$BT_JSON" ]; then
+  cur_bt_pin=$(json_field "$BT_JSON" pin) || die "fix or remove $BT_JSON, then run install.sh again"
+  cur_bt_enabled=$(json_field "$BT_JSON" enabled)
+  cur_bt_address=$(json_field "$BT_JSON" address)
+  cur_bt_name=$(json_field "$BT_JSON" name)
+fi
 
 # ---------------------------------------------------------------- spørsmålene
 interactive=0
@@ -219,6 +244,41 @@ fi
 id -u "$user" >/dev/null 2>&1 || die "there's no user called $user"
 group=$(id -gn "$user")
 
+# Bluetooth er på, med mindre --no-bluetooth er gitt nå eller sist ("enabled": false i bt.json).
+# Mangler noe på Pi-en, settes det ikke opp, og resten av oppsettet går som før.
+bluetooth=1
+case $bt_flag in
+  off) bluetooth=0 ;;
+  '')  [ "$cur_bt_enabled" != false ] || bluetooth=0 ;;
+esac
+[ -z "$bt_pin" ] || [[ $bt_pin =~ $PIN_RX ]] || die "--bt-pin: the PIN is 4 to 16 digits"
+bt_missing='' bt_address=$cur_bt_address bt_name=${cur_bt_name:-"$vehicle HMI"} bt_pin_note='as set up'
+if [ $bluetooth -eq 1 ]; then
+  if [ -z "$bt_address" ]; then
+    n=''
+    if [[ $vehicle =~ ([0-9]+)$ ]] && [ ${#BASH_REMATCH[1]} -le 3 ]; then n=$((10#${BASH_REMATCH[1]})); fi
+    if [ -n "$n" ] && [ "$n" -ge 1 ] && [ "$n" -lt $BT_POOL_FIRST ]; then bt_address=192.168.1.$n
+    else bt_missing="the address 192.168.1.<number> needs a vehicle name ending in a number 1-$((BT_POOL_FIRST - 1)) (or \"address\" in $BT_JSON)"
+    fi
+  fi
+  if [ -n "$bt_missing" ]; then :
+  elif [ ! -f "$PROJECT/bluetooth/bt-hmi.py" ]; then bt_missing="$PROJECT/bluetooth is missing: copy the whole project folder"
+  elif [ ! -e /sys/class/bluetooth/hci0 ]; then bt_missing="this Pi has no Bluetooth adapter (hci0)"
+  elif ! command -v btmgmt >/dev/null 2>&1 || ! systemctl cat bluetooth.service >/dev/null 2>&1; then bt_missing="BlueZ (btmgmt, bluetooth.service) isn't installed"
+  elif ! python3 -c 'import dbus; from gi.repository import GLib' 2>/dev/null; then bt_missing="python3 with dbus and gi isn't installed (python3-dbus, python3-gi)"
+  fi
+  if [ -n "$bt_missing" ]; then
+    bluetooth=0
+  elif [ -n "$bt_pin" ]; then
+    [ "$bt_pin" = "$cur_bt_pin" ] || bt_pin_note='new (shown at the end)'
+  elif [ -n "$cur_bt_pin" ]; then
+    bt_pin=$cur_bt_pin
+  else
+    bt_pin=$(python3 -c 'import secrets; print("".join(secrets.choice("0123456789") for _ in range(8)))')
+    bt_pin_note='new (shown at the end)'
+  fi
+fi
+
 # ---------------------------------------------------------------- oversikten
 step "Setting up this Pi"
 say "  project      $PROJECT"
@@ -231,6 +291,10 @@ else say "  recorder     not set up"
 fi
 say "  time server  $ntp"
 say "  logs         $([ $disk_logs -eq 1 ] && echo 'on the SD card' || echo 'in RAM (gone after a restart)')"
+if [ $bluetooth -eq 1 ]; then say "  Bluetooth    \"$bt_name\", HMI at http://$bt_address:$HUB_PORT, PIN $bt_pin_note"
+elif [ -n "$bt_missing" ]; then say "  Bluetooth    NOT SET UP: $bt_missing"
+else say "  Bluetooth    off (--no-bluetooth)"
+fi
 [ "$PROJECT" = "$RECOMMENDED" ] || say "  note         the recommended place for the project folder is $RECOMMENDED"
 if LC_ALL=C grep -q '[^ -~]' <<<"$PROJECT"; then warn "the path $PROJECT has letters outside a-z (like ø); $RECOMMENDED is safer"; fi
 if [ -n "$cur_vehicle" ] && [ "$cur_vehicle" != "$vehicle" ]; then warn "the vehicle's name changes from $cur_vehicle to $vehicle"; fi
@@ -356,6 +420,121 @@ else
   say "  journald keeps the logs as the system is set up (on the SD card if /var/log/journal exists)"
 fi
 
+# ---------------------------------------------------------------- Bluetooth
+# bt.json: PIN-koden og om Bluetooth er på. Bare de to endres; "name" og "address" blir stående.
+write_bt_json() {   # write_bt_json <true|false>
+  local settings
+  settings=$("$NODE" -e '
+    const fs = require("fs");
+    const [file, pin, enabled] = process.argv.slice(1);
+    let s = {};
+    if (fs.existsSync(file)) s = JSON.parse(fs.readFileSync(file, "utf8").replace(/^﻿/, ""));
+    if (pin) s.pin = pin;
+    s.enabled = enabled === "true";
+    process.stdout.write(JSON.stringify(s, null, 2));
+  ' "$BT_JSON" "$bt_pin" "$1")
+  printf '%s\n' "$settings" | put "$BT_JSON" 600
+}
+
+# dhcpcd skal la Bluetooth-nettet være (pan0 og bnep*): navnene legges til i den første
+# denyinterfaces-linjen, eller i en ny linje før den første interface- eller ssid-blokken.
+dhcpcd_deny() {
+  awk -v names='pan0 bnep*' '
+    BEGIN { n = split(names, want, " "); note = "# install.sh: the Bluetooth network for the HMI (kjoreverk-bt) is not for dhcpcd" }
+    function add(line,   i, j, k, f, have) {
+      k = split(line, f, /[ \t]+/)
+      for (i = 1; i <= n; i++) {
+        have = 0
+        for (j = 1; j <= k; j++) if (f[j] == want[i]) have = 1
+        if (!have) line = line " " want[i]
+      }
+      return line
+    }
+    !done && /^[ \t]*denyinterfaces[ \t]/ { print add($0); done = 1; next }
+    !done && tolower($1) ~ /^(interface|ssid|profile)$/ { print note; print "denyinterfaces " names; print ""; done = 1 }
+    { print }
+    END { if (!done) { print ""; print note; print "denyinterfaces " names } }
+  ' "$DHCPCD_CONF"
+}
+
+dhcpcd_restart=0
+if [ $bluetooth -eq 1 ]; then
+  step "Bluetooth"
+  write_bt_json true
+  mkdir -p "$BT_LIB"
+  for f in bt-hmi.py bt-dhcp.py btnet.py; do
+    mode=644; [ "$f" = btnet.py ] || mode=755
+    put "$BT_LIB/$f" $mode < "$PROJECT/bluetooth/$f"
+  done
+
+  put "$BT_UNIT" 644 <<EOF
+# Written by $PROJECT/install.sh, which rewrites it each time it runs.
+# The HMI over Bluetooth (PAN/NAP on pan0): $BT_LIB/bt-hmi.py, the PIN in $BT_JSON.
+[Unit]
+Description=Kjoreverk: HMI over Bluetooth (PAN/NAP on pan0)
+Requires=bluetooth.service
+After=bluetooth.service
+
+[Service]
+Type=simple
+# the bridge the tablets join; nothing that comes in here is forwarded (only the HMI on this Pi)
+ExecStartPre=-/sbin/ip link add pan0 type bridge
+ExecStartPre=/sbin/sysctl -q -w net.ipv4.conf.pan0.forwarding=0 net.ipv6.conf.pan0.disable_ipv6=1
+ExecStartPre=/sbin/ip link set pan0 up
+ExecStart=/usr/bin/python3 $BT_LIB/bt-hmi.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+  put "$BT_DHCP_UNIT" 644 <<EOF
+# Written by $PROJECT/install.sh, which rewrites it each time it runs.
+[Unit]
+Description=Kjoreverk: DHCP for tablets on the Bluetooth network (pan0)
+BindsTo=kjoreverk-bt.service
+After=kjoreverk-bt.service
+
+[Service]
+ExecStart=/usr/bin/python3 $BT_LIB/bt-dhcp.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=kjoreverk-bt.service
+EOF
+
+  # dhcpcd tar ellers pan0 og bnep* som sine; den startes på nytt helt til slutt (wifi blir borte noen sekunder)
+  if [ -f "$DHCPCD_CONF" ]; then
+    mode=$(stat -c %a "$DHCPCD_CONF"); grp=$(stat -c %G "$DHCPCD_CONF")
+    dhcpcd_deny | put "$DHCPCD_CONF" "$mode"
+    if [ $CHANGED -eq 1 ]; then chgrp "$grp" "$DHCPCD_CONF"; dhcpcd_restart=1; fi
+  fi
+  # dhcp-helper (reléet for PLS-siden) skal ikke sende nettbrettenes DHCP-spørsmål ut i tunnelnettet
+  if [ -f "$DHCP_HELPER_DEFAULT" ] && grep -q '^DHCPHELPER_OPTS="[^"]*"$' "$DHCP_HELPER_DEFAULT"; then
+    sed '/^DHCPHELPER_OPTS=/{/-e pan0/!s/"$/ -e pan0"/}' "$DHCP_HELPER_DEFAULT" | put "$DHCP_HELPER_DEFAULT" 644
+    [ $CHANGED -eq 0 ] || systemctl restart dhcp-helper || warn "dhcp-helper didn't restart"
+  fi
+  say "  tablets pair with \"$bt_name\" and open http://$bt_address:$HUB_PORT"
+else
+  step "Bluetooth"
+  for u in kjoreverk-bt.service kjoreverk-bt-dhcp.service; do
+    if systemctl is-enabled --quiet "$u" 2>/dev/null || systemctl is-active --quiet "$u" 2>/dev/null; then
+      systemctl disable --now --quiet "$u" || true
+      say "  stopped    $u"
+    fi
+  done
+  if [ -n "$bt_missing" ]; then
+    warn "the HMI isn't set up on Bluetooth: $bt_missing"
+  else
+    write_bt_json false   # så det er av også neste gang skriptet kjøres
+    bluetoothctl discoverable off >/dev/null 2>&1 || true
+    ip link del pan0 2>/dev/null || true
+    say "  the HMI isn't on Bluetooth: install.sh --bluetooth turns it on again"
+  fi
+fi
+
 # ---------------------------------------------------------------- tjenestene
 step "Starting the services"
 # En instans fra før med et program som ikke lenger finnes (binary-adapter), stoppes.
@@ -379,6 +558,7 @@ elif systemctl is-enabled --quiet kjoreverk@recorder.service 2>/dev/null || syst
   systemctl disable --now --quiet kjoreverk@recorder.service || true
   say "  stopped    kjoreverk@recorder.service"
 fi
+[ $bluetooth -eq 0 ] || units+=(kjoreverk-bt.service kjoreverk-bt-dhcp.service)
 systemctl daemon-reload
 systemctl enable --quiet "${units[@]}"
 systemctl restart "${units[@]}"
@@ -410,6 +590,18 @@ esac
 ip=$(hostname -I 2>/dev/null | awk '{ print $1 }')
 step "$([ $ok -eq 1 ] && echo "Done: $vehicle is running" || echo "Set up, but something isn't running (above)")"
 say "  HMI          http://${ip:-<this-pi>}:$HUB_PORT"
+if [ $bluetooth -eq 1 ]; then
+  say "  Bluetooth    pair with \"$bt_name\", PIN $bt_pin, turn on Internet access, then http://$bt_address:$HUB_PORT"
+fi
 say "  logs         journalctl -u 'kjoreverk@*' -f"
 say "  again        sudo bash $PROJECT/install.sh   (after an update, or to change something)"
+# Etter alt annet, så et wifi-brudd ikke stopper skriptet midt i (over ssh)
+if [ $dhcpcd_restart -eq 1 ]; then
+  if systemd-run --quiet --collect --on-active=5 --unit=kjoreverk-dhcpcd-restart \
+       systemctl restart --job-mode=ignore-dependencies dhcpcd.service; then
+    say "  note         dhcpcd restarts in 5 s to leave the Bluetooth network alone: wifi is gone for a few seconds"
+  else
+    warn "dhcpcd wasn't restarted: it leaves the Bluetooth network alone after the Pi's next restart"
+  fi
+fi
 [ $ok -eq 1 ]

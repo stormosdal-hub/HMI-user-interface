@@ -7,7 +7,8 @@ kjøreverk. De kjører som **systemd-tjenester**, slik at de:
 - starter på nytt av seg selv hvis de krasjer
 - kjører uten internett (systemd er helt lokalt)
 
-**`install.sh` setter opp alt:** kjøreverkets navn, tjenestene, recorderen, klokka og loggene.
+**`install.sh` setter opp alt:** kjøreverkets navn, tjenestene, recorderen, klokka, loggene og
+HMI-et over Bluetooth.
 Kopier prosjektmappen til Pi-en, kjør skriptet, og kjøreverket er i drift. Resten av filen
 forklarer hva skriptet gjør, og hvordan det gjøres for hånd.
 
@@ -15,7 +16,7 @@ forklarer hva skriptet gjør, og hvordan det gjøres for hånd.
 
 | Hva | Verdi |
 |---|---|
-| Prosjektmappen | `/opt/kjoreverk` (med `install.sh`, `batch-interval.sh`, denne filen og `hmi-core/`) |
+| Prosjektmappen | `/opt/kjoreverk` (med `install.sh`, `batch-interval.sh`, denne filen, `hmi-core/` og `bluetooth/`) |
 | Tjenestene | `kjoreverk@hub.service`, `kjoreverk@tcplink-adapter.service` (PLS-en), `kjoreverk@plcdiag-adapter.service` (PLS-ens diagnosebuffer, fra web-serveren) og `kjoreverk@recorder.service` (den sentrale serveren) |
 | Malenheten | `/etc/systemd/system/kjoreverk@.service` |
 | Kjøreverkets navn | `/etc/kjoreverk/vehicle` |
@@ -24,6 +25,9 @@ forklarer hva skriptet gjør, og hvordan det gjøres for hånd.
 | Tidsserveren | `10.0.0.104`, i `/etc/systemd/timesyncd.conf.d/kjoreverk.conf` |
 | Loggene | i RAM: `/etc/systemd/journald.conf.d/kjoreverk.conf` |
 | Brukeren tjenestene kjører som | den som kjørte `sudo bash install.sh`, vanligvis `pi` |
+| HMI-et over Bluetooth | `http://192.168.1.<kjøreverksnummer>:8080` (kv_52: `192.168.1.52`), se [HMI-et over Bluetooth](#hmi-et-over-bluetooth) |
+| Bluetooth-tjenestene | `kjoreverk-bt.service` og `kjoreverk-bt-dhcp.service`, programmene i `/usr/local/lib/kjoreverk-bt` |
+| PIN-koden for Bluetooth | `/etc/kjoreverk/bt.json`, lesbar bare for root |
 
 ![Filene på Pi-en: prosjektmappen i /opt/kjoreverk, oppsettet install.sh skriver i /etc, og tjenestene systemd starter](hmi-core/docs/pi-files.svg)
 
@@ -84,7 +88,11 @@ og skriver ut adressen til HMI-en:
 ```
 == Done: kv_53 is running
   HMI          http://10.0.0.53:8080
+  Bluetooth    pair with "kv_53 HMI", PIN 12345678, turn on Internet access, then http://192.168.1.53:8080
 ```
+
+Første gang Bluetooth settes opp, startes dhcpcd på nytt 5 sekunder etter at skriptet er
+ferdig, så wifi er borte noen sekunder (se [HMI-et over Bluetooth](#hmi-et-over-bluetooth)).
 
 **Bruk `sudo bash install.sh`**, ikke `sudo ./install.sh`: en minnepenn tar bort kjørebiten.
 
@@ -107,6 +115,9 @@ sudo bash /opt/kjoreverk/install.sh --vehicle kv_53 --plc 10.0.123.51:2000 \
 | `--user pi` | Brukeren tjenestene kjører som. Standard: den som står fra før, ellers den som kjører `sudo` |
 | `--ntp 10.0.0.104` | Tidsserveren |
 | `--disk-logs` | La loggene ligge på SD-kortet, slik systemet er satt opp (se [Loggene](#loggene)) |
+| `--no-bluetooth` | Ikke HMI-et over Bluetooth. Kjører det, stoppes det, og det er av også neste gang skriptet kjøres |
+| `--bluetooth` | Bluetooth på igjen etter `--no-bluetooth`. Uten noen av dem er det på |
+| `--bt-pin 12345678` | PIN-koden et nettbrett taster én gang for å pare, 4–16 sifre. Standard: den som står fra før, ellers en ny tilfeldig på 8 sifre |
 | `--yes` | Ikke spør: bruk valgene og det som står fra før. Mangler navnet, avbryter skriptet |
 
 ### Hva skriptet gjør
@@ -120,6 +131,9 @@ sudo bash /opt/kjoreverk/install.sh --vehicle kv_53 --plc 10.0.123.51:2000 \
 | Tidsserveren (eller en linje i chrony, hvis Pi-en bruker chrony) | `/etc/systemd/timesyncd.conf.d/kjoreverk.conf` |
 | Loggene i RAM | `/etc/systemd/journald.conf.d/kjoreverk.conf` |
 | Prosjektmappen gis til brukeren | `chown -R pi: /opt/kjoreverk` |
+| Bluetooth: programmene fra `bluetooth/`, som kjører som root, og PIN-koden (`600`, `root`) | `/usr/local/lib/kjoreverk-bt/`, `/etc/kjoreverk/bt.json` |
+| Bluetooth: tjenestene | `/etc/systemd/system/kjoreverk-bt.service` og `kjoreverk-bt-dhcp.service` |
+| Bluetooth: dhcpcd lar `pan0` og `bnep*` være, og dhcp-helper sender ikke nettbrettenes DHCP videre | `denyinterfaces` i `/etc/dhcpcd.conf`, `-e pan0` i `/etc/default/dhcp-helper` |
 
 Så slår den på og starter (eller starter på nytt) tjenestene. En tjeneste fra før med et program
 som ikke lenger finnes i prosjektet, som `kjoreverk@binary-adapter.service`, stoppes og slås av.
@@ -134,9 +148,9 @@ som ikke lenger finnes i prosjektet, som `kjoreverk@binary-adapter.service`, sto
 ### Kjøre det på nytt og oppdatere
 
 Skriptet kan kjøres så ofte du vil, og det er slik en oppdatering tas i bruk. Det som står fra
-før (navnet, PLS-en, serveren, nøkkelen og brukeren), blir standard, og tjenestene startes på
-nytt med den nye koden. At det er kjørt før, gjør ingenting: filer som ikke er endret, lar det
-være.
+før (navnet, PLS-en, serveren, nøkkelen, brukeren, PIN-koden og om Bluetooth er på), blir
+standard, og tjenestene startes på nytt med den nye koden. At det er kjørt før, gjør ingenting:
+filer som ikke er endret, lar det være.
 
 - **Oppdatere programmet:** kopier de nye filene over de gamle, som for en ny Pi, og kjør
   `sudo bash /opt/kjoreverk/install.sh --yes`. Kopieringen sletter ikke filer som er fjernet fra
@@ -344,6 +358,52 @@ SD-kortet mens kjøreverket går. Det følger planen om at ingenting skal skrive
 - **For hånd:** `/etc/systemd/journald.conf.d/kjoreverk.conf` med `[Journal]` og
   `Storage=volatile`, og så `sudo systemctl restart systemd-journald`.
 
+## HMI-et over Bluetooth
+
+I tunnelen er det mange steder uten wifi-dekning. Der når et nettbrett HMI-et over Bluetooth i
+stedet: Pi-en er et lite Bluetooth-nett (PAN) i tillegg til wifi, og HMI-et er det samme som over
+wifi. `install.sh` setter det opp, med mindre `--no-bluetooth` er gitt.
+
+**Koble til fra et Android-nettbrett:**
+
+1. *Innstillinger → Bluetooth*, søk og velg **«kv_52 HMI»** (kjøreverkets navn og `HMI`).
+2. Tast **PIN-koden** når nettbrettet ber om den. Det er bare første gang.
+3. Trykk på tannhjulet ved «kv_52 HMI» og slå på **Internettilgang**.
+4. Slå av wifi på nettbrettet, ellers kan Android sende HMI-trafikken ut på wifi.
+5. Åpne **`http://192.168.1.52:8080`** i nettleseren. Android sier at nettet ikke har internett; det
+   stemmer, nettet går bare til Pi-en.
+
+- **Adressen** er `192.168.1.<kjøreverksnummer>`: tallet på slutten av navnet (`kv_52` → `.52`),
+  som må være 1–199. Nettbrettene får adresser fra `.200` og oppover. `"address"` i `bt.json`
+  overstyrer adressen.
+- **PIN-koden** lager `install.sh` første gang, tilfeldig og 8 sifre, og skriver den ut til slutt.
+  Den ligger i `/etc/kjoreverk/bt.json` (`sudo cat /etc/kjoreverk/bt.json`) og blir stående når
+  skriptet kjøres på nytt. En ny kode: `--bt-pin`. Nettbrett som er paret fra før, trenger ikke
+  pare på nytt.
+- **Bare med PIN-koden.** HMI-et har ingen innlogging, så den som kan pare, kan styre. Paring med
+  fast kode krever den eldre PIN-paringen, så programmet slår av SSP («Just Works», der en enhet
+  uten skjerm kan pare uten kode). Det sjekkes hvert 30. sekund; kan SSP ikke slås av, slås
+  Bluetooth av heller enn å stå åpent.
+- **Nettbrettet når bare Pi-en:** det som kommer inn på Bluetooth-nettet (`pan0`), sendes ikke
+  videre til PLS-en eller tunnelnettet.
+- **Rekkevidden** er omtrent 10 meter med Pi-ens egen antenne, mindre gjennom et stålskap.
+- **Wifi og Bluetooth deler brikke og antenne** på 2,4 GHz. HMI-et sender lite, men følg med på
+  om wifi-forbindelsen blir dårligere når et nettbrett er koblet til.
+- **iPad virker ikke:** den kan bare bruke Bluetooth-nett fra en iPhone.
+- **dhcpcd og dhcp-helper:** `install.sh` legger `pan0` og `bnep*` i `denyinterfaces` i
+  `/etc/dhcpcd.conf`, så dhcpcd ikke tar Bluetooth-nettet som sitt, og `-e pan0` i
+  `/etc/default/dhcp-helper`, så reléet for PLS-siden ikke sender nettbrettenes DHCP ut i
+  tunnelnettet. Første gang startes dhcpcd på nytt 5 sekunder etter at skriptet er ferdig, og
+  wifi er borte noen sekunder. Forbindelsen til PLS-en (eth0) rører det ikke.
+- **DHCP til nettbrettene** gir `bt-dhcp.py`, et lite eget program som leser og sender rett på
+  `pan0`: dhcp-helper har allerede UDP-port 67, så en vanlig DHCP-server får den ikke.
+
+**Fjerne et nettbrett** (for eksempel et som er mistet): `bluetoothctl paired-devices` viser dem,
+`sudo bluetoothctl remove <adressen>` fjerner det. Bytt også PIN-koden med `--bt-pin`.
+
+**Feilsøking:** `journalctl -u kjoreverk-bt -u kjoreverk-bt-dhcp -f` viser paringen
+(«pairing request from …»), tilkoblingene og adressene nettbrettene får («gave 192.168.1.200 to …»).
+
 ## Legge til et nytt program
 
 Ingen ny enhetsfil trengs — bare to kommandoer:
@@ -447,3 +507,8 @@ Alle skal være `active (running)` uten at du har kjørt noen kommandoer for hå
 | Se de siste loggene | `journalctl -u kjoreverk@<navn>.service -n 50 --no-pager` |
 | Følg loggene live | `journalctl -u 'kjoreverk@*' -f` |
 | Last inn på nytt etter endringer i enheter | `sudo systemctl daemon-reload` |
+| Vis PIN-koden for Bluetooth | `sudo cat /etc/kjoreverk/bt.json` |
+| Nettbrettene som er paret | `bluetoothctl paired-devices` |
+| Fjern et nettbrett | `sudo bluetoothctl remove <adressen>` |
+| Loggene for Bluetooth | `journalctl -u kjoreverk-bt -u kjoreverk-bt-dhcp -f` |
+| Slå av HMI-et over Bluetooth | `sudo bash /opt/kjoreverk/install.sh --no-bluetooth --yes` |

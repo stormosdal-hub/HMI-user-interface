@@ -1,2 +1,4 @@
 # install.sh og batch-interval.sh kjøres med bash på Pi-en: Windows-linjeskift ville stoppe dem
 *.sh text eol=lf
+# bluetooth/*.py kjøres av systemd på Pi-en
+*.py text eol=lf
