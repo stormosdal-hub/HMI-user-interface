@@ -158,12 +158,90 @@ const stackLine = e => { const m = String(e && e.stack || '').match(/about:srcdo
 const hmi = {
   inputs, stage, colors: cfg.colors, container: document.getElementById('root'),
   onInput: f => { listeners.push(f); },
-  asset: name => cfg.origin + '/assets/' + encodeURIComponent(name),
+  asset: name => (cfg.assets && cfg.assets[name]) || cfg.origin + '/assets/' + encodeURIComponent(name),
   get values() { return input; },
 };
 globalThis.hmi = hmi;
 post({ kind: 'ready' });
 `;
+
+  // ---------------------------------------------------------------- three.js til rammen
+  // Rammen har ingen origin, og Chrome (Local Network Access) lar ikke en slik ramme hente noe fra
+  // en hub på en lokal adresse (http://192.168.x.x), bare fra localhost. Derfor henter denne siden
+  // three.js, de addonene koden importerer og filene den nevner med hmi.asset('...'), og rammen får
+  // dem som data:-URL-er i import-kartet sitt. Ingenting i rammen henter fra huben.
+  const modules = new Map();   // nøkkel i import-kartet -> Promise<{ url, deps }>
+  const ADDON_REF = /(['"])three\/addons\/([^'"]+)\1/g;
+  const RELATIVE = /(\bfrom\s*|\bimport\s*)(['"])(\.{1,2}\/[^'"]+)\2/g;
+  const ASSET_REF = /hmi\.asset\(\s*(['"])([^'"]+)\1\s*\)/g;
+  const dataUrl = blob => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.onerror = () => rej(r.error);
+    r.readAsDataURL(blob);
+  });
+  async function getText(url) {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error(`${url} (${r.status})`);
+    return r.text();
+  }
+  // én modul som data:-URL; dens egne relative importer blir også nøkler i import-kartet, så
+  // ingenting pakkes inn to ganger
+  function loadModule(key) {
+    if (!modules.has(key)) {
+      const p = (async () => {
+        let text;
+        const deps = [];
+        if (key === 'three') {
+          text = (await getText('/vendor/three/three.module.js')).replace(/(['"])\.\/three\.core\.js\1/g, '$1three/core$1');
+          deps.push('three/core');
+        } else if (key === 'three/core') {
+          text = await getText('/vendor/three/three.core.js');
+        } else {
+          const path = key.slice('three/addons/'.length);
+          text = (await getText('/vendor/three/addons/' + path)).replace(RELATIVE, (m, kw, q, rel) => {
+            const dep = 'three/addons/' + new URL(rel, 'http://x/' + path).pathname.slice(1);
+            deps.push(dep);
+            return kw + q + dep + q;
+          });
+          for (const m of text.matchAll(ADDON_REF)) deps.push('three/addons/' + m[2]);
+        }
+        return { url: await dataUrl(new Blob([text], { type: 'text/javascript' })), deps };
+      })();
+      p.catch(() => modules.delete(key));
+      modules.set(key, p);
+    }
+    return modules.get(key);
+  }
+  // det koden trenger: { imports: import-kartet, assets: navn -> data:-URL }
+  async function pack(code) {
+    const imports = {};
+    const visit = async key => {
+      if (key in imports) return;
+      imports[key] = null;
+      let mod;
+      try { mod = await loadModule(key); } catch (e) {
+        if (key === 'three' || key === 'three/core') throw e;
+        delete imports[key];   // en addon som ikke finnes: importen feiler i rammen, med en melding
+        return;
+      }
+      imports[key] = mod.url;
+      await Promise.all(mod.deps.map(visit));
+    };
+    const wanted = new Set(['three']);
+    for (const m of (HELPER + '\n' + code).matchAll(ADDON_REF)) wanted.add('three/addons/' + m[2]);
+    await Promise.all([...wanted].map(visit));
+    const assets = {};
+    for (const m of code.matchAll(ASSET_REF)) {
+      const name = m[2];
+      if (name in assets) continue;
+      try {
+        const r = await fetch('/assets/' + encodeURIComponent(name), { cache: 'no-cache' });
+        if (r.ok) assets[name] = await dataUrl(await r.blob());
+      } catch { /* hmi.asset gir hubens adresse; lasteren sier fra */ }
+    }
+    return { imports, assets };
+  }
 
   // ---------------------------------------------------------------- rammen
   const frames = new Map();   // contentWindow -> handler
@@ -173,18 +251,50 @@ post({ kind: 'ready' });
   });
 
   function run(holder, code, { colors, onMessage }) {
+    const frame = document.createElement('iframe');
+    frame.setAttribute('sandbox', 'allow-scripts');
+    frame.setAttribute('referrerpolicy', 'no-referrer');
+    frame.setAttribute('title', 'Animation');
+    frame.className = 'anim-frame';
+    holder.append(frame);
+
+    let ready = false, dead = false;
+    const latest = {};
+    const post = values => frame.contentWindow && frame.contentWindow.postMessage({ kind: 'values', values }, '*');
+    frames.set(frame.contentWindow, m => {
+      if (m.kind === 'ready') { ready = true; if (Object.keys(latest).length) post({ ...latest }); }
+      onMessage(m);
+    });
+    pack(code).then(pkg => { if (!dead) frame.srcdoc = page(code, colors, pkg); })
+      .catch(e => { if (!dead) onMessage({ kind: 'error', message: `three.js could not be loaded from the hub: ${e.message}` }); });
+    return {
+      frame,
+      send(values) {
+        Object.assign(latest, values);
+        if (ready) post(values);
+      },
+      destroy() {
+        dead = true;
+        frames.delete(frame.contentWindow);
+        frame.remove();
+      },
+    };
+  }
+
+  // rammens dokument: koden, hjelperen og import-kartet med three.js
+  function page(code, colors, pkg) {
     const origin = location.origin;
     const nonce = 'n' + Math.random().toString(36).slice(2) + Date.now().toString(36);
     const csp = [
       "default-src 'none'",
-      `script-src 'nonce-${nonce}' ${origin}/vendor/`,
+      `script-src 'nonce-${nonce}' data: ${origin}/vendor/`,
       `connect-src ${origin}/assets/ ${origin}/vendor/ data: blob:`,
       `img-src ${origin}/assets/ data: blob:`,
-      `media-src ${origin}/assets/ blob:`,
+      `media-src ${origin}/assets/ data: blob:`,
       "style-src 'unsafe-inline'",
     ].join('; ');
-    const importmap = { imports: { three: `${origin}/vendor/three/three.module.js`, 'three/addons/': `${origin}/vendor/three/addons/` } };
-    const cfg = { colors, origin };
+    const importmap = { imports: { ...pkg.imports, 'three/addons/': `${origin}/vendor/three/addons/` } };
+    const cfg = { colors, origin, assets: pkg.assets };
     const safe = s => String(s).replace(/<\/script/gi, '<\\/script');
     const prefix =
       `<!doctype html><html><head><meta charset="utf-8">\n` +
@@ -195,38 +305,11 @@ post({ kind: 'ready' });
       `<script type="module" nonce="${nonce}">${HELPER.replace('__CFG__', JSON.stringify(cfg))}</script>\n` +
       `<script type="module" nonce="${nonce}">\n`;
     const offset = prefix.split('\n').length - 1;
-    const doc = prefix.replace('__OFFSET__', String(offset)) + safe(code) +
+    return prefix.replace('__OFFSET__', String(offset)) + safe(code) +
       `\n</script>\n<script type="module" nonce="${nonce}">parent.postMessage({ kind: 'started' }, '*');</script>\n</body></html>`;
-
-    const frame = document.createElement('iframe');
-    frame.setAttribute('sandbox', 'allow-scripts');
-    frame.setAttribute('referrerpolicy', 'no-referrer');
-    frame.setAttribute('title', 'Animation');
-    frame.className = 'anim-frame';
-    holder.append(frame);
-
-    let ready = false;
-    const latest = {};
-    const post = values => frame.contentWindow && frame.contentWindow.postMessage({ kind: 'values', values }, '*');
-    frames.set(frame.contentWindow, m => {
-      if (m.kind === 'ready') { ready = true; if (Object.keys(latest).length) post({ ...latest }); }
-      onMessage(m);
-    });
-    frame.srcdoc = doc;
-    return {
-      frame,
-      send(values) {
-        Object.assign(latest, values);
-        if (ready) post(values);
-      },
-      destroy() {
-        frames.delete(frame.contentWindow);
-        frame.remove();
-      },
-    };
   }
 
-  const STARTER = `// Animation snippet. Inputs declared here can be bound to tags in the HMI.
+  const STARTER =`// Animation snippet. Inputs declared here can be bound to tags in the HMI.
 import * as THREE from 'three';
 
 const input = hmi.inputs({
