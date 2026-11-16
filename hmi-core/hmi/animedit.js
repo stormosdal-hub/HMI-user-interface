@@ -2,10 +2,12 @@
  * Kodeeditor for Animation-widgeter.
  *
  * Venstre: kodesnutten med linjenumre. Høyre: en live forhåndsvisning i samme sandkasse som
- * widgeten bruker, en testkontroll for hver inngang koden deklarerer, og en konsoll som
- * viser feil med kodesnuttens egne linjenumre (klikk på en for å hoppe dit).
+ * widgeten bruker, en testkontroll for hver inngang koden deklarerer, verdiene koden setter på
+ * utgangene sine (de skrives ikke til taggene herfra), og en konsoll som viser feil med
+ * kodesnuttens egne linjenumre (klikk på en for å hoppe dit).
  *
- * H.openAnimEditor({ name, code, colors, boundTag(input) -> tag|'', live(tag) -> value, save(code) -> Promise })
+ * H.openAnimEditor({ name, code, colors, boundTag(input) -> tag|'', boundOutput(output) -> tag|'',
+ *                    live(tag) -> value, save(code) -> Promise })
  */
 (function () {
   'use strict';
@@ -17,6 +19,9 @@
     let runner = null;
     const testValues = {};          // navn på inngang -> verdi valgt med testkontrollene
     let declared = [];
+    let declaredOut = [];
+    const outShown = {}, outRelease = {}, liveOut = {};   // utgang -> det koden satte / slippverdi / siste levende verdi sendt
+    const boundOutput = opts.boundOutput || (() => '');
     let useLive = false, liveTimer = 0;
 
     // ---------------------------------------------------------------- skall
@@ -46,7 +51,7 @@
     ta.wrap = 'off';
     ta.setAttribute('aria-label', 'Animation code');
     codebox.append(gutter, ta);
-    left.append(codebox, el('div', 'ae-hint', 'Ctrl+Enter runs \u00b7 Ctrl+S saves \u00b7 Tab indents \u00b7 hmi.inputs() \u00b7 hmi.stage() \u00b7 hmi.asset(name) \u00b7 hmi.colors \u2014 see the README'));
+    left.append(codebox, el('div', 'ae-hint', 'Ctrl+Enter runs \u00b7 Ctrl+S saves \u00b7 Tab indents \u00b7 hmi.inputs() \u00b7 hmi.outputs() \u00b7 hmi.panel() \u00b7 hmi.stage() \u00b7 hmi.asset(name) \u00b7 hmi.colors \u2014 see the README'));
     // forhåndsvisning, innganger, konsoll
     const right = el('section', 'ae-right');
     const bar = el('div', 'ae-bar');
@@ -58,12 +63,14 @@
     bar.append(runBtn, liveLabel);
     const preview = el('div', 'ae-preview');
     const inputsBox = el('div', 'ae-inputs');
+    const outputsBox = el('div', 'ae-inputs ae-outputs');
+    outputsBox.hidden = true;
     const consoleHead = el('div', 'ae-conhead');
     consoleHead.append(el('span', null, 'Console'));
     const clearBtn = el('button', 'ae-clear', 'Clear');
     consoleHead.append(clearBtn);
     const con = el('div', 'ae-console');
-    right.append(bar, preview, inputsBox, consoleHead, con);
+    right.append(bar, preview, inputsBox, outputsBox, consoleHead, con);
     bodyEl.append(left, right);
     box.append(head, bodyEl);
     overlay.append(box);
@@ -162,10 +169,49 @@
       }
     }
 
+    // ---------------------------------------------------------------- utgangspanel
+    // Viser hva koden setter. Editoren skriver aldri til taggene: det gjør bare widgeten, i Run-modus.
+    const outText = (d, v) => (v === undefined ? '—' : fmt(v, typeof v === 'number' && !Number.isInteger(v) ? 2 : 0) + (d.unit && typeof v === 'number' ? ' ' + d.unit : ''));
+    function renderOutputs() {
+      outputsBox.innerHTML = '';
+      outputsBox.hidden = !declaredOut.length;
+      if (!declaredOut.length) return;
+      outputsBox.append(el('div', 'ae-ohead', 'Outputs — what the code sets. Not written to the tags from here; the widget writes them in Run mode.'));
+      for (const d of declaredOut) {
+        const row = el('div', 'ae-input');
+        const tag = boundOutput(d.name);
+        const name = el('div', 'ae-iname');
+        name.append(el('b', null, d.name));
+        name.append(el('span', null, tag ? '→ ' + tag : 'not bound to a tag'));
+        row.dataset.out = d.name;
+        row.append(name, el('span', 'ae-onote', ''), el('span', 'ae-ival', outText(d, outShown[d.name] ?? d.value)));
+        outputsBox.append(row);
+      }
+    }
+    function showOut(name, value, note) {
+      outShown[name] = value;
+      const d = declaredOut.find(x => x.name === name);
+      const row = outputsBox.querySelector(`[data-out="${CSS.escape(name)}"]`);
+      if (!d || !row) return;
+      row.querySelector('.ae-ival').textContent = outText(d, value);
+      row.querySelector('.ae-onote').textContent = note || '';
+    }
+
     function pumpLive() {
       clearInterval(liveTimer);
       if (!useLive) return;
       liveTimer = setInterval(() => {
+        // utgangene får taggens verdi bare når den endres, så det du prøver i forhåndsvisningen blir stående
+        const outs = {};
+        for (const d of declaredOut) {
+          const tag = boundOutput(d.name);
+          const v = tag ? opts.live(tag) : undefined;
+          if (v === undefined || v === null || Object.is(liveOut[d.name], v)) continue;
+          liveOut[d.name] = v;
+          outs[d.name] = v;
+          showOut(d.name, v);
+        }
+        if (runner && Object.keys(outs).length) runner.sendOutputs(outs);
         const values = {};
         for (const d of declared) {
           const tag = opts.boundTag(d.name);
@@ -182,7 +228,13 @@
         if (runner && Object.keys(values).length) runner.send(values);
       }, 200);
     }
-    liveBox.addEventListener('change', () => { useLive = liveBox.checked; renderInputs(); pumpLive(); if (!useLive && runner) runner.send({ ...testValues }); });
+    liveBox.addEventListener('change', () => {
+      useLive = liveBox.checked;
+      for (const k of Object.keys(liveOut)) delete liveOut[k];
+      renderInputs();
+      pumpLive();
+      if (!useLive && runner) runner.send({ ...testValues });
+    });
 
     // ---------------------------------------------------------------- kjøring
     function start() {
@@ -193,12 +245,20 @@
         colors: opts.colors,
         onMessage(m) {
           if (m.kind === 'inputs') { declared = m.inputs; renderInputs(); }
+          else if (m.kind === 'outputs') { declaredOut = m.outputs; renderOutputs(); }
+          else if (m.kind === 'write') showOut(String(m.name), m.value);
+          else if (m.kind === 'press') { outRelease[m.name] = m.release; showOut(String(m.name), m.value, 'held'); }
+          else if (m.kind === 'release') showOut(String(m.name), outRelease[m.name]);
           else if (m.kind === 'error') log('error', m.message, m.line);
           else if (m.kind === 'log') log(m.level === 'error' ? 'error' : m.level === 'warn' ? 'warn' : 'plain', m.text);
         },
       });
       declared = [];
+      declaredOut = [];
+      for (const k of Object.keys(outShown)) delete outShown[k];
+      for (const k of Object.keys(liveOut)) delete liveOut[k];
       renderInputs();
+      renderOutputs();
       if (Object.keys(testValues).length && !useLive) runner.send({ ...testValues });
     }
     runBtn.addEventListener('click', start);

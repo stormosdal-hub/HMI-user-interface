@@ -597,6 +597,9 @@ body.run .svg-time canvas { cursor: pointer; touch-action: none; }
 .ae-input input[type=range] { width: 100%; accent-color: var(--edit); }
 .ae-input input[type=number], .ae-input input[type=text] { width: 100%; background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 6px; color: var(--ink); }
 .ae-ival { font-size: 12px; color: var(--live); text-align: right; font-variant-numeric: tabular-nums; }
+.ae-outputs { border-top: 1px solid var(--line-soft); padding-top: 6px; }
+.ae-ohead { font-size: 11px; color: var(--ink-3); }
+.ae-onote { font-size: 11px; color: var(--edit); }
 .ae-conhead { flex: none; display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--ink-2); }
 .ae-clear { background: transparent; border: 1px solid var(--line); border-radius: var(--radius); padding: 1px 8px; font-size: 11px; color: var(--ink-3); }
 .ae-console { flex: 1; min-height: 70px; overflow-y: auto; background: var(--panel); border: 1px solid var(--line-soft); border-radius: var(--radius); font: 12px/1.5 ui-monospace, "SFMono-Regular", Consolas, monospace; padding: 4px 0; }

@@ -191,7 +191,7 @@
     if (def) for (const p of def.props) {
       if ((p.type === 'tag' || p.type === 'tags' || p.type === 'dataset') && typeof props[p.key] === 'string') props[p.key] = resolveTag(props[p.key]);
       if (p.type === 'bindings' && Array.isArray(props[p.key])) props[p.key] = props[p.key].map(b => ({ ...b, tag: resolveTag(b.tag) }));
-      if (p.type === 'inputs' && props[p.key] && typeof props[p.key] === 'object') {
+      if ((p.type === 'inputs' || p.type === 'outputs') && props[p.key] && typeof props[p.key] === 'object') {
         props[p.key] = Object.fromEntries(Object.entries(props[p.key]).map(([k, t]) => [k, resolveTag(t)]));
       }
     }
@@ -696,7 +696,7 @@
       } else if (p.type === 'tabs') {
         box.append(tabsField(p, w));
         continue;
-      } else if (p.type === 'inputs') {
+      } else if (p.type === 'inputs' || p.type === 'outputs') {
         box.append(inputsField(p, w));
         continue;
       } else if (p.type === 'bindings') {
@@ -973,15 +973,20 @@
   }
 
   // ---- animasjonswidgeter: hvilken tag som driver hvilken inngang koden deklarerer
+  // Animation-widgetens innganger (tag -> koden) eller utganger (koden -> tag): ett tagfelt for
+  // hver som koden deklarerer
   function inputsField(p, w) {
+    const outs = p.type === 'outputs';
     const wrap = el('div', 'row');
     wrap.append(el('label', null, p.label));
     const m = state.mounted.get(w.id);
-    const declared = m && m.handle && m.handle.declared;
+    const declared = m && m.handle && (outs ? m.handle.declaredOutputs : m.handle.declared);
     const map = w.props[p.key] || (w.props[p.key] = {});
     const names = declared ? declared.map(d => d.name) : Object.keys(map);
     if (!w.props.asset) wrap.append(el('div', 'hint', 'Choose the code first.'));
+    else if (!declared && outs) wrap.append(el('div', 'hint', Object.keys(map).length ? 'The code hasn’t declared its outputs yet.' : 'Values the code sends: declare them with hmi.outputs(), and each gets a tag to write here. Written in Run mode only.'));
     else if (!declared) wrap.append(el('div', 'hint', 'The inputs appear when the code runs and declares them with hmi.inputs().'));
+    else if (outs && names.length) wrap.append(el('div', 'hint', 'The code writes these tags in Run mode, like a Slider or Switch would.'));
     for (const name of names) {
       const d = declared && declared.find(x => x.name === name);
       const row = el('div', 'inrow');
@@ -1003,6 +1008,7 @@
       row.append(x);
       wrap.append(row);
     }
+    if (outs) return wrap;   // knappen for å redigere koden står under inngangene
     const btn = el('button', 'wide', 'Edit code');
     btn.disabled = !w.props.asset;
     btn.addEventListener('click', () => openAnimCode(w));
@@ -1019,6 +1025,7 @@
       name, code,
       colors: H.anim.themeColors(w.props.color),
       boundTag: input => resolveTag((w.props.inputs || {})[input] || ''),
+      boundOutput: output => resolveTag((w.props.outputs || {})[output] || ''),
       live: tag => { const v = state.values.get(tag); return v ? v.value : undefined; },
       async save(text) {
         await putAsset(name, text, 'text/javascript');

@@ -460,7 +460,7 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
 | Alarm list | alarmer | — | De aktive og ukvitterte alarmene, med Ack; filtrer på kilde og alvorlighetsgrad. Se [Alarmer](#alarmer-og-kvittering) |
 | PLC diagnostics | et datasett | Refresh | PLS-ens diagnosebuffer: én rad per oppføring, et klikk viser den lange teksten. *Dataset* er `${pls}.diagbuffer`. Se [PLS-diagnose](#pls-diagnose-diagnosebufferen-fra-pls-en) |
 | Drawing | mange tagger | mange tagger | En SVG med en koblingstabell — se [9](#9-tegninger-svg). *Time slider* gir en tidsstripe for å spole tilbake og se tegningen slik den var, se [Spole tilbake i tid](#spole-tilbake-i-tid) |
-| Animation | mange tagger | — | En Three.js-kodesnutt med deklarerte innganger — se [10](#10-animasjoner-threejs) |
+| Animation | mange tagger | utgangene koden deklarerer | En Three.js-kodesnutt med deklarerte innganger og utganger, også med egne glidebrytere, brytere og knapper — se [10](#10-animasjoner-threejs) |
 
 **Farger.** De fleste widgeter har en fargeinnstilling; *Default* betyr temafargen. Alarmrødt
 overstyrer den alltid, så en verdi utenfor området ser lik ut uansett hvilken farge du valgte.
@@ -1062,7 +1062,8 @@ synlighet, blinking, spinn, rotasjon og flytting.
 ## 10. Animasjoner (Three.js)
 
 En Animation-widget kjører en Three.js-kodesnutt og sender tagverdier inn i innganger som
-kodesnutten deklarerer.
+kodesnutten deklarerer. Kodesnutten kan også ha utganger, med glidebrytere, brytere og knapper
+over animasjonen, som skriver tagger (se [Utganger](#utganger-glidebrytere-brytere-og-knapper-i-animasjonen)).
 
 ### Hva en kodesnutt trenger
 
@@ -1116,6 +1117,10 @@ renderer.setAnimationLoop(() => { /* les innganger, oppdater, render */ });
 | `hmi.inputs({ name: value, … })` | Deklarerer innganger og returnerer et objekt som alltid holder de siste verdiene deres. Per inngang: `value` (startverdi), `min`/`max` (området til test-glidebryteren), `unit`, `smooth` (sekunder for å gli over til en ny verdi), `wrap: 360` (vinkler tar korteste vei rundt) |
 | `hmi.stage(options)` | Valgfri ferdig scene. Valg: `camera: [x,y,z]`, `target: [x,y,z]`, `fov`, `grid` (true eller en størrelse), `gridY`, `controls` (orbit med musen i Run-modus), `lights: false`, `transparent`. Returnerer `{ THREE, scene, camera, renderer, controls, onFrame(fn(dt, t)) }` |
 | `hmi.onInput((name, value) => …)` | Kalles hver gang en koblet tag endres |
+| `hmi.outputs({ name: value, … })` | Deklarerer utganger og returnerer et objekt: `output.x = 5` skriver taggen som er koblet til `x`, og `output.x` gir det koden satte sist, eller taggens verdi når den endres et annet sted. Startverdien (`value`) bestemmer typen (tall, `true`/`false` eller tekst) og vises til taggens verdi kommer; den skrives ikke. Per utgang også: `min`/`max` (verdier utenfor settes til grensen), `step`, `unit`, `label`, og for `hmi.hold`: `press`, `release`, `repeat` |
+| `hmi.hold('name')` | Trykker utgangen inn (`press`, standard `true`/1) og gir en funksjon som slipper den (`release`, standard `false`/0). Slippes også når pekeren slippes, rammen mister fokus eller widgeten forsvinner. `repeat: 200` på utgangen sender trykket hver 200 ms så lenge det holdes (hold-to-run, se `holdRepeatMs` på Button) |
+| `hmi.panel([{ output: 'x' }, …], { title, place, width })` | Ferdige kontroller over animasjonen: glidebryter for et tall med `min` og `max`, bryter for `true`/`false`, tallfelt ellers; `type: 'button'` gir en knapp som holdes (`hmi.hold`), `text` er knappeteksten. `{ input: 'y' }` viser en inngang. `place`: `top-left` (standard), `top-right`, `bottom-left`, `bottom-right` |
+| `hmi.onOutput((name, value) => …)` | Kalles når taggen til en utgang endres et annet sted (ikke for det koden selv setter) |
 | `hmi.asset('robot.glb')` | URL-en til en fil i prosjektets `assets/`-mappe, for lastere (loaders) |
 | `hmi.colors` | Temafarger: `background`, `accent` (widgetens fargeinnstilling), `ink`, `grid`, `gridSoft` |
 | `hmi.container` | Elementet du rendrer inn i når du lager din egen renderer |
@@ -1133,15 +1138,53 @@ renderer.setAnimationLoop(() => { /* les innganger, oppdater, render */ });
 mot klokka sett fra den positive enden av aksen, så en vinkel med motsatt konvensjon må få
 snudd fortegnet.
 
+### Utganger: glidebrytere, brytere og knapper i animasjonen
+
+En kodesnutt kan også sende verdier ut, for eksempel fra glidebrytere og brytere over 3D-scenen.
+Deklarer dem med `hmi.outputs()`, og koble en tag til hver under *Outputs* i egenskapspanelet:
+
+```js
+const output = hmi.outputs({
+  setpoint: { value: 50, min: 0, max: 100, unit: '%', label: 'Settpunkt' },
+  pump:     { value: false, label: 'Pumpe' },
+  start:    { value: false, label: 'Start' },
+  jog:      { value: false, label: 'Jog', repeat: 200 },   // hold-to-run
+});
+
+hmi.panel([
+  { output: 'setpoint' },                          // glidebryter (tall med min og max)
+  { output: 'pump' },                              // bryter (true/false)
+  { output: 'start', type: 'button' },             // holdes inne mens du trykker
+  { output: 'jog', type: 'button', text: 'Jog' },
+], { title: 'Styring', place: 'top-left' });
+
+onFrame(() => { ring.position.y = output.setpoint / 100 * height; });   // les dem som innganger
+```
+
+- **Lager du kontrollene selv** (egne `<input type="range">` osv.): sett `output.setpoint = v`
+  når de endres, og les `output.setpoint` for å vise taggens verdi. En knapp som skal holdes:
+  `knapp.onpointerdown = () => hmi.hold('start')`.
+- **En glidebryter sender mange verdier mens du drar.** HMI-en skriver høyst én verdi hver
+  0,1 s per utgang, og den siste kommer alltid fram.
+- **Etter en skriving** viser `output.x` det koden satte. 1,2 s senere får den taggens verdi,
+  så en skriving enheten avviste, ikke blir stående.
+- **Et trykk som holdes** (`hmi.hold`) slippes når pekeren slippes, når rammen mister fokus,
+  når widgeten forsvinner, og hvis koden henger: rammen sier fra flere ganger i sekundet at
+  trykket fortsatt holdes, og stopper det i 0,6 s, slipper HMI-en det.
+- *Enabled when* og *Ask before sending* finnes ikke for utganger. Bruk en Button- eller
+  Switch-widget for kommandoer som trenger det.
+
 ### Kobling og redigering
 
-I egenskapspanelet velger, laster opp eller lager du (**New…**) `.js`-filen. Inngangene koden
-deklarerer, vises da med et tagfelt hver. Dobbeltklikk widgeten for å åpne
+I egenskapspanelet velger, laster opp eller lager du (**New…**) `.js`-filen. Inngangene og
+utgangene koden deklarerer, vises da med et tagfelt hver (under *Inputs* og *Outputs*). Dobbeltklikk widgeten for å åpne
 **kodeeditoren**:
 
 - **Direkte forhåndsvisning** av koden i editoren.
 - **En test-glidebryter for hver inngang**, så du kan prøve uten enheten. *Use live tag
   values* følger de virkelige taggene i stedet.
+- **Utgangene** med verdien koden setter. Editoren skriver aldri til taggene: det gjør bare
+  widgeten, i Run-modus. Med *Use live tag values* får utgangene taggens verdi når den endres.
 - **En konsoll:** feil viser dine egne linjenumre, og klikker du på en, hopper du til den
   linjen.
 - **Ctrl+Enter** kjører koden, **Ctrl+S** lagrer den. Lagring starter alle widgeter som bruker
@@ -1154,14 +1197,15 @@ kjøretøy.
 
 Hver animasjon kjører i sin egen ramme i en sandkasse (sandbox):
 
-- **Den kan ikke lese eller skrive tagger, HMI-siden eller prosjektet,** og når ikke ut på
-  nettverket, bortsett fra three.js og prosjektets assets. Tagverdier går bare inn, så en
-  prosjektfil med animasjonskode kan bare tegne.
+- **Den når ikke HMI-siden, prosjektet, hubens WebSocket eller andre tagger,** og når ikke ut
+  på nettverket, bortsett fra three.js og prosjektets assets. Tagverdier går inn i inngangene.
+  Ut går bare verdier for utgangene koden deklarerer, og HMI-en skriver dem bare til taggen
+  du har koblet til hver utgang i egenskapspanelet. En utgang uten tag skriver ingenting.
+- **Skrivingen følger de samme reglene som en Slider eller Switch:** bare i Run-modus, ikke til
+  en enhet som er frakoblet, og en tag som ikke er skrivbar avvises av huben.
 - **En feil blir værende i sin widget** og vises der.
 - **Bytte av skjermbilde fjerner rammen helt,** så render-løkker og WebGL-kontekster hoper
-  seg ikke opp i en HMI som kjører i dagevis.
-- **Animasjoner er bare til visning.** Kamerastyringen virker i Run-modus, men et klikk på en
-  3D-del kan ikke styre noe.
+  seg ikke opp i en HMI som kjører i dagevis. Et trykk som holdes (`hmi.hold`), slippes da.
 
 ---
 
@@ -1574,7 +1618,7 @@ fane når prosjektet lastes.
   `[{ "value": 80, "color": "#f2b441" }, ...]`.
 - **Drawing-widgeter** har koblingstabellen sin i `props.bindings` som
   `{ target, tag, action, ... }`-rader.
-- **Animation-widgeter** har `props.inputs` som `{ inputName: tag }`.
+- **Animation-widgeter** har `props.inputs` som `{ inputName: tag }` og `props.outputs` som `{ outputName: tag }`.
 
 ### 12.4 Kommandolinje
 
