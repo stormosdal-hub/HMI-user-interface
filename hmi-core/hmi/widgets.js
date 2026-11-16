@@ -839,20 +839,21 @@
   // Verdier tegnes som trinn: en lagret verdi holder til den neste. null er et hull (foreldet).
   const TREND_COLORS = ['#f2b441', '#5cc8e8', '#43c483'];
   const RANGES = [['10 min', 600], ['1 h', 3600], ['8 h', 28800], ['24 h', 86400], ['7 d', 604800]];
+  const TREND_RANGES = [['1 min', 60], ...RANGES];   // Trend har en kortere i tillegg
+  const TREND_SPAN_MIN = 5e3;
   const TICKS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200, 10800, 21600, 43200, 86400, 172800, 604800].map(s => s * 1000);
   const pad2 = n => String(n).padStart(2, '0');
   const clockOf = (t, secs) => { const d = new Date(t); return `${pad2(d.getHours())}:${pad2(d.getMinutes())}${secs ? ':' + pad2(d.getSeconds()) : ''}`; };
   const dayOf = t => new Date(t).toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' });
-  const spanText = ms => (ms >= 86400000 ? `${+(ms / 86400000).toFixed(1)} d` : ms >= 3600000 ? `${+(ms / 3600000).toFixed(1)} h` : `${Math.round(ms / 60000)} min`);
   H.register('trend', {
     name: 'Trend', hint: 'Line chart, up to 3 tags', size: [360, 200],
     props: [
       P.label('Trend'),
       { key: 'tags', label: 'Tags (comma separated)', type: 'tags', default: '' },
       { key: 'window', label: 'Time range (seconds)', type: 'number', default: 120,
-        hint: 'What the trend shows at first. The hub keeps the last 600 changes of each tag: minutes for a busy value, longer for one that seldom changes. Anything older needs a connected history database' },
+        hint: 'What the trend shows at first, and what Live goes back to. The hub keeps the last 600 changes of each tag: minutes for a busy value, longer for one that seldom changes. Anything older needs a connected history database' },
       { key: 'timeControls', label: 'Time controls in Run mode', type: 'bool', default: true,
-        hint: 'Buttons for 10 min to 7 days, back and forward in time, and Live' },
+        hint: 'Buttons for 1 min to 7 days, back and forward in time, and Live (now, with the time range above). Mouse wheel or two fingers on the trend: zoom; sideways or Shift+wheel: move in time' },
       { key: 'min', label: 'Min (empty = auto)', type: 'number', default: '' },
       { key: 'max', label: 'Max (empty = auto)', type: 'number', default: '' },
       P.decimals(1),
@@ -886,12 +887,13 @@
       });
 
       // ---- hva som vises: live, eller en fast strekning [fra, til]
-      let view = { live: true, span: Math.max(5, num(p.window, 120)) * 1000 };
+      const home = Math.max(5, num(p.window, 120)) * 1000;   // trendens eget tidsrom: Live går tilbake hit
+      let view = { live: true, span: home };
       const range = () => (view.live ? { to: Date.now(), from: Date.now() - view.span } : { from: view.from, to: view.to });
       const span = () => (view.live ? view.span : view.to - view.from);
       const longLive = () => view.live && view.span > 3600000;   // oppfriskes nå og da, ikke punkt for punkt
 
-      let seq = 0, refresh = 0, reload = 0;
+      let seq = 0, refresh = 0, reload = 0, loadTimer = 0;
       async function load() {
         const my = ++seq, r = range(), width = Math.max(100, Math.round(cv.clientWidth || 400));
         note.textContent = 'Loading…';
@@ -916,20 +918,56 @@
       const rangeLabel = el('span', 'trend-range');
       const btn = (text, title, fn) => { const x = el('button', null, text); x.type = 'button'; x.title = title; x.addEventListener('click', e => { e.stopPropagation(); fn(); }); return x; };
       const go = v => { view = v; syncTools(); load(); };
-      const rangeBtns = RANGES.map(([t, s]) => btn(t, `The last ${t}, live`, () => go({ live: true, span: s * 1000 })));
+      const rangeBtns = TREND_RANGES.map(([t, s]) => btn(t, `The last ${t}, live`, () => go({ live: true, span: s * 1000 })));
       const back = btn('◀', 'Back in time', () => { const r = range(), s = span(); go({ live: false, from: r.from - s / 2, to: r.to - s / 2 }); });
       const fwd = btn('▶', 'Forward in time', () => {
         const r = range(), s = span();
         go(r.to + s / 2 >= Date.now() ? { live: true, span: s } : { live: false, from: r.from + s / 2, to: r.to + s / 2 });
       });
-      const liveBtn = btn('Live', 'Back to now', () => go({ live: true, span: span() }));
+      // tilbake til nå, med trendens eget tidsrom (også etter en zoom eller en av knappene)
+      const liveBtn = btn('Live', `Back to now, the last ${durText(home)}`, () => go({ live: true, span: home }));
       function syncTools() {
-        rangeBtns.forEach((x, i) => x.classList.toggle('on', view.live && view.span === RANGES[i][1] * 1000));
+        rangeBtns.forEach((x, i) => x.classList.toggle('on', view.live && view.span === TREND_RANGES[i][1] * 1000));
         fwd.disabled = view.live;
-        liveBtn.hidden = view.live;
-        const r = range();
-        rangeLabel.textContent = view.live ? '' : `${dayOf(r.from)} ${clockOf(r.from)} – ${dayOf(r.to) === dayOf(r.from) ? '' : dayOf(r.to) + ' '}${clockOf(r.to)} (${spanText(span())})`;
+        liveBtn.hidden = view.live && view.span === home;
+        const r = range(), secs = span() < 3600000;
+        // live: hvor langt tilbake, når ingen av knappene passer (trendens eget tidsrom, eller etter en zoom)
+        rangeLabel.textContent = view.live ? (TREND_RANGES.some(x => x[1] * 1000 === view.span) ? '' : `Last ${durText(view.span)}`)
+          : `${dayOf(r.from)} ${clockOf(r.from, secs)} – ${dayOf(r.to) === dayOf(r.from) ? '' : dayOf(r.to) + ' '}${clockOf(r.to, secs)} (${durText(span())})`;
       }
+
+      // ---- zoome og flytte med musehjulet, som Timeline: live står nå fast i høyre kant, ellers står
+      // tiden under pekeren stille. Sidelengs (eller Shift+hjul) flytter i tid.
+      let plot = null;   // { x0, x1 }: tegneflaten fra siste tegning
+      const loadSoon = () => { clearTimeout(loadTimer); loadTimer = setTimeout(load, 200); };
+      function setView(from, to) {
+        const s = to - from;
+        view = to >= Date.now() ? { live: true, span: s } : { live: false, from, to };
+        syncTools(); loadSoon(); schedule();
+      }
+      function zoom(anchor, factor) {
+        const r = range(), s = r.to - r.from, ns = clamp(s * factor, TREND_SPAN_MIN, SPAN_MAX);
+        if (ns === s) return;
+        if (view.live) { view = { live: true, span: ns }; syncTools(); loadSoon(); schedule(); return; }
+        const from = anchor - (anchor - r.from) * ns / s;
+        setView(from, from + ns);
+      }
+      cv.addEventListener('wheel', e => {
+        if (ctx.mode() !== 'run' || p.timeControls === false || !plot) return;
+        e.preventDefault();
+        const k = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1;
+        const dx = e.deltaX * k, dy = e.deltaY * k;
+        if (!dx && !dy) return;
+        const r = range(), w = plot.x1 - plot.x0 || 1;
+        if (e.shiftKey || Math.abs(dx) > Math.abs(dy)) {
+          const d = (Math.abs(dx) > Math.abs(dy) ? dx : dy) / w * (r.to - r.from);
+          return setView(r.from + d, r.to + d);
+        }
+        // pekeren i lerretets egne koordinater, også når skjermbildet er skalert (Run-modus)
+        const box = cv.getBoundingClientRect(), x = (e.clientX - box.left) * (cv.clientWidth / (box.width || 1));
+        const at = r.from + clamp((x - plot.x0) / w, 0, 1) * (r.to - r.from);
+        zoom(at, Math.exp(dy * (e.ctrlKey ? 0.01 : 0.0015)));   // ctrl: klyp på styreflaten
+      }, { passive: false });
       if (p.timeControls !== false && ctx.mode() === 'run') {
         tools.append(rangeLabel, ...rangeBtns, back, fwd, liveBtn);
         foot.append(tools);
@@ -980,6 +1018,7 @@
         const padL = Math.ceil(Math.max(...labels.map(t => g.measureText(t).width))) + 10;
         const padR = 8, padT = 6, padB = Math.ceil(fontPx) + 8, half = fontPx / 2 + 1;
         const x0 = padL, x1 = W - padR, y0 = padT, y1 = Hh - padB;
+        plot = { x0, x1 };
         const X = t => x0 + (t - tStart) / (tEnd - tStart || 1) * (x1 - x0);
         const Y = v => y1 - (v - lo) / (hi - lo || 1) * (y1 - y0);
         g.strokeStyle = soft;
@@ -1079,7 +1118,7 @@
         relabel() { for (const x of series) x.li.textContent = x.last === null ? shown(x.name) : `${shown(x.name)} ${fmt(x.last, p.decimals)}`; },
         // huben har fått eldre punkter tilbake (f.eks. fra PLS-ens ringbuffer): hent tidsrommet på nytt
         restored() { clearTimeout(reload); reload = setTimeout(load, 300); },
-        destroy() { clearInterval(timer); clearTimeout(refresh); clearTimeout(first); clearTimeout(reload); cancelAnimationFrame(raf); ro.disconnect(); seq++; },
+        destroy() { clearInterval(timer); clearTimeout(refresh); clearTimeout(first); clearTimeout(reload); clearTimeout(loadTimer); cancelAnimationFrame(raf); ro.disconnect(); seq++; },
       };
     },
   });
