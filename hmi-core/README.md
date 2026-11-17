@@ -452,7 +452,7 @@ Filen, hvis du vil redigere den for hånd (huben leser den på nytt innen 2 seku
 | Indicator | 1 tag | — | Lyser når true/ulik null, eller når den er lik en valgt verdi; tekst for på/av |
 | Switch | 1 tag | true/false | Viser taggen; et klikk skriver det motsatte. [Sikrere betjening](#sikrere-betjening) |
 | Button | 1 tag | en hvilken som helst verdi | Verdi ved trykk; valgfri verdi ved slipp (momentan); *Repeat while held* for hold-for-å-kjøre, se [13](#13-sikkerhet). Blir grå når enheten er frakoblet. [Sikrere betjening](#sikrere-betjening) |
-| Slider | 1 tag | tall | Skriver når du slipper. [Sikrere betjening](#sikrere-betjening) |
+| Slider | 1 tag | tall | Skriver når du slipper. Vannrett eller loddrett (min nederst; gjør widgeten høy og smal). [Sikrere betjening](#sikrere-betjening) |
 | Number input | 1 tag | tall | Skriv inn en verdi, trykk Set. [Sikrere betjening](#sikrere-betjening) |
 | Trend | opptil 3 tagger | — | Et tidsrom fra minutter til uker; tidsknapper og en markør i Run-modus; fast eller automatisk skala, én farge per linje. Se [Trender](#trender-over-timer-og-dager) |
 | Timeline | opptil 128 av/på-tagger | — | Ett felt per digitalt signal, med en stolpe der det var på. Dra for å gå bakover i tid, rull eller klyp for å zoome; markøren viser når signalet slo seg på og av. Et klikk setter en tidsmarkør som tegninger med *Time slider* følger. Se [Tidslinje](#tidslinje-for-digitale-signaler) |

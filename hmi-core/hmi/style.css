@@ -315,6 +315,11 @@ body.run .viewport { place-items: center; padding: 8px; }
 .wslider input[type=range] { width: 100%; accent-color: var(--accent, var(--live)); margin: 4px 0; }
 .wslider .line { display: flex; justify-content: space-between; font-size: calc(12px * var(--fs-text)); color: var(--ink-3); font-variant-numeric: tabular-nums; }
 .wslider .line .cur { color: var(--accent, var(--live)); font-weight: 500; font-size: calc(14px * var(--fs-text)); }
+/* loddrett: min nederst (writing-mode + rtl), skalaen og verdien ved siden av, som Bar */
+.wslider.vertical { flex-direction: row; align-items: stretch; justify-content: center; gap: 10px; padding: 10px 12px; }
+.wslider.vertical input[type=range] { writing-mode: vertical-lr; direction: rtl; width: auto; height: auto; min-height: 0; margin: 0 4px; flex: none; touch-action: none; }
+.wslider .side { display: flex; flex-direction: column; justify-content: space-between; min-width: 0; font-size: calc(12px * var(--fs-text)); color: var(--ink-3); font-variant-numeric: tabular-nums; }
+.wslider .side .cur { color: var(--accent, var(--live)); font-weight: 500; font-size: calc(14px * var(--fs-text)); }
 
 /* tryggere betjening: ikke aktivert (betingelsen holder ikke), eller enheten frakoblet (foreldet) */
 .widget.disabled .wbody { opacity: 0.45; }

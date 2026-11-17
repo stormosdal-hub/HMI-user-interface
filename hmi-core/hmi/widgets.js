@@ -734,22 +734,26 @@
       { key: 'max', label: 'Max', type: 'number', default: 100 },
       { key: 'step', label: 'Step', type: 'number', default: 1 },
       P.decimals(0),
+      { key: 'orientation', label: 'Orientation', type: 'select', options: ['horizontal', 'vertical'], default: 'horizontal', hint: 'Vertical sliders have min at the bottom. Make the widget tall and narrow' },
       P.color('Colour'),
       P.labelSize(), P.textSize('Text size', 'The current value and the min and max'),
       ...safetyProps('A question such as "Change the speed setpoint?", asked with the new value when the slider is let go'),
     ],
     tags: tagsOf,
     mount(root, w, ctx) {
+      const vertical = w.props.orientation === 'vertical';
       const b = plate(root, w.props.label);
-      b.classList.add('wslider');
+      b.classList.add('wslider', vertical ? 'vertical' : 'horizontal');
       const range = el('input');
       range.type = 'range';
       range.min = num(w.props.min, 0); range.max = num(w.props.max, 100); range.step = num(w.props.step, 1) || 1;
-      const line = el('div', 'line');
+      if (vertical) range.setAttribute('aria-orientation', 'vertical');
       const lo = el('span', null, fmt(num(w.props.min, 0), w.props.decimals));
       const cur = el('span', 'cur', '—');
       const hi = el('span', null, fmt(num(w.props.max, 100), w.props.decimals));
-      line.append(lo, cur, hi);
+      // vannrett: min, verdien og max under glidebryteren; loddrett: max, verdien og min ved siden av
+      const line = el('div', vertical ? 'side' : 'line');
+      if (vertical) line.append(hi, cur, lo); else line.append(lo, cur, hi);
       b.append(range, line);
       let dragging = false, asking = false, last;
       const show = v => { cur.textContent = fmt(v, w.props.decimals) + (w.props.unit ? ' ' + w.props.unit : ''); };
