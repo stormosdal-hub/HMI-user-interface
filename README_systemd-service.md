@@ -119,7 +119,7 @@ sudo bash /opt/kjoreverk/install.sh --vehicle kv_53 --plc 10.0.123.51:2000 \
 | `--no-bluetooth` | Ikke HMI-et over Bluetooth. Kjører det, stoppes det, og det er av også neste gang skriptet kjøres |
 | `--bluetooth` | Bluetooth på igjen etter `--no-bluetooth`. Uten noen av dem er det på |
 | `--bt-pin 12345678` | PIN-koden et nettbrett taster én gang for å pare, 4–16 sifre. Standard: den som står fra før, ellers en ny tilfeldig på 8 sifre |
-| `--lcd` | LCD-editoren og displayene på Pi-en (`lcd-editor/`). Den er på også neste gang skriptet kjøres. Uten valget er den av, med mindre den er slått på fra før |
+| `--lcd` | LCD-editoren og displayene på Pi-en (`lcd-editor/`), med pakkene den trenger fra apt, og I2C og SPI på (etter en omstart). Den er på også neste gang skriptet kjøres. Uten valget er den av, med mindre den er slått på fra før |
 | `--no-lcd` | Ingen LCD-editor. Kjører den, stoppes den |
 | `--yes` | Ikke spør: bruk valgene og det som står fra før. Mangler navnet, avbryter skriptet |
 
@@ -138,6 +138,8 @@ sudo bash /opt/kjoreverk/install.sh --vehicle kv_53 --plc 10.0.123.51:2000 \
 | Bluetooth: tjenestene | `/etc/systemd/system/kjoreverk-bt.service` og `kjoreverk-bt-dhcp.service` |
 | Bluetooth: dhcpcd lar `pan0` og `bnep*` være, og dhcp-helper sender ikke nettbrettenes DHCP videre | `denyinterfaces` i `/etc/dhcpcd.conf`, `-e pan0` i `/etc/default/dhcp-helper` |
 | LCD-editoren (med `--lcd`): tjenesten, som kjører `lcd-editor/` med Python | `/etc/systemd/system/kjoreverk-lcd.service` |
+| LCD-editoren (med `--lcd`): pakkene som mangler | `apt-get install python3-flask python3-pil python3-psutil python3-smbus2 python3-lgpio python3-spidev python3-numpy i2c-tools` |
+| LCD-editoren (med `--lcd`): I2C og SPI, og `i2c-dev` | `dtparam=i2c_arm=on` og `dtoverlay=spi0-1cs,no_miso` nederst i `/boot/firmware/config.txt`, og `/etc/modules-load.d/kjoreverk-lcd.conf` |
 
 Så slår den på og starter (eller starter på nytt) tjenestene. En tjeneste fra før med et program
 som ikke lenger finnes i prosjektet, som `kjoreverk@binary-adapter.service`, stoppes og slås av.
@@ -421,16 +423,20 @@ sudo bash /opt/kjoreverk/install.sh --no-lcd    # av
 ```
 
 - **Editoren** er på `http://<pi-ip>:8000`, også over Bluetooth (`http://192.168.1.52:8000` for kv_52).
-- **Den er Python**, ikke Node: den trenger Raspberry Pi OS Bookworm eller nyere og
-  `sudo apt install python3-flask python3-pil`, og flere pakker for displayene. Mangler noe,
-  sier skriptet hva, og setter den ikke opp; resten av oppsettet går som før.
+- **Den er Python**, ikke Node, og trenger Raspberry Pi OS Bookworm eller nyere. `--lcd` installerer
+  pakkene som mangler, med apt (flask og PIL til editoren, og pakkene til displayene og inngangene),
+  så Pi-en trenger internett første gang. Får apt ikke installert dem, sier skriptet hvilke det
+  gjelder. Uten flask og PIL setter det ikke opp editoren, men resten av oppsettet går som før.
 - **Den leser bare** fra huben, som recorderen, og når huben er borte, viser displayene `--`.
 - **Tjenesten** `kjoreverk-lcd.service` kjører `python3 -B -m app` i `lcd-editor/` som samme bruker
   som de andre, med gruppene `i2c`, `spi` og `gpio` (de som finnes). Displayene og porten står i
   `lcd-editor/config.toml`; etter en endring der: `sudo systemctl restart kjoreverk-lcd`.
 - **Koble displayene til pluggen X1** på RaspiPower-kortet: den har strøm, I2C og SPI. De andre
-  GPIO-ene går til kortets innganger og 24 V-utganger. TFT-en trenger i tillegg
-  `dtoverlay=spi0-1cs,no_miso` i `/boot/firmware/config.txt`; koblingen står i `lcd-editor/README.md`.
+  GPIO-ene går til kortets innganger og 24 V-utganger. Koblingen står i `lcd-editor/README.md`.
+- **I2C og SPI** slår `--lcd` på i `/boot/firmware/config.txt`, med `dtparam=i2c_arm=on` og
+  `dtoverlay=spi0-1cs,no_miso`. Den siste gjør CE1 og MISO til vanlige GPIO-er, som TFT-en bruker.
+  Linjene legges nederst, bare når de ikke står der fra før. De virker etter neste omstart, og
+  skriptet sier fra til slutt når det trengs: `sudo reboot`. `--no-lcd` lar dem stå.
 - **En layout kan ha flere faner,** og bryterne på kortets innganger INN0–INN7 (24 V, på SV2) blar
   mellom dem. Hva hver inngang gjør, velger du i editoren. Editoren leser inngangene med
   `python3-lgpio`, og fanen som vises, lagres ikke.

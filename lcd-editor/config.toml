@@ -51,7 +51,8 @@ backlight = true
 # (GPIO 18, 24 og 25 er UTL6, UTL2 og UTL1). DC og BLK bruker CE1 og MISO på X1, som blir vanlige
 # GPIO-er med denne linjen nederst i /boot/firmware/config.txt (og en omstart):
 #     dtoverlay=spi0-1cs,no_miso
-# Linjen slår også på SPI. Virker ikke TFT-en, viser editoren den emulert, med feilen.
+# Linjen slår også på SPI, og install.sh --lcd legger den inn. Virker ikke TFT-en, viser editoren
+# den emulert, med feilen.
 [[display]]
 id = "tft"
 name = "TFT 2.25\""

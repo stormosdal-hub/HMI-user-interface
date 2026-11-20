@@ -11,7 +11,8 @@
 #                       PIN-kode per kjøreverk: bluetooth/ i /usr/local/lib/kjoreverk-bt og
 #                       /etc/kjoreverk/bt.json (ikke med --no-bluetooth)
 #   LCD-editoren        skjermbilder til displayer på Pi-en, med taggene fra huben: lcd-editor/ som
-#                       kjoreverk-lcd.service (bare med --lcd, og så til --no-lcd)
+#                       kjoreverk-lcd.service, pakkene den trenger (apt) og I2C og SPI i
+#                       /boot/firmware/config.txt (bare med --lcd, og så til --no-lcd)
 #
 # Den kjøres fra prosjektmappen, helst /opt/kjoreverk, og setter opp tjenestene for mappen den
 # ligger i:
@@ -47,6 +48,12 @@ DHCPCD_CONF=/etc/dhcpcd.conf
 DHCP_HELPER_DEFAULT=/etc/default/dhcp-helper
 LCD_DIR=$PROJECT/lcd-editor
 LCD_UNIT=/etc/systemd/system/kjoreverk-lcd.service
+# pakkene til LCD-editoren: flask og PIL (må være der), Pi-ens verdier, I2C, inngangene og TFT-en, og i2cdetect
+LCD_PACKAGES='python3-flask python3-pil python3-psutil python3-smbus2 python3-lgpio python3-spidev python3-numpy i2c-tools'
+LCD_MODULES=/etc/modules-load.d/kjoreverk-lcd.conf     # i2c-dev: /dev/i2c-1 til displayene på I2C
+BOOT_CONFIG=/boot/firmware/config.txt
+BOOT_I2C='dtparam=i2c_arm=on'
+BOOT_SPI='dtoverlay=spi0-1cs,no_miso'                  # én CS og ingen MISO: GPIO 7 og 9 blir TFT-ens DC og lys
 OLD_LCD_SERVICE=oled-editor.service                   # LCD-editorens egen tjeneste, fra install-service.sh
 
 VEHICLE_RX='^[A-Za-z_][A-Za-z0-9_.-]{0,31}$'            # som lib/vehicle.js
@@ -76,7 +83,8 @@ Bluetooth. Run it from the project folder, preferably $RECOMMENDED:
   --no-bluetooth   no HMI over Bluetooth (stops it if it runs; it stays off when this is run again)
   --bluetooth      the HMI over Bluetooth on again after --no-bluetooth (it is on by default)
   --bt-pin PIN     the PIN a tablet types once to pair, 4-16 digits (default: the one set up, else a new one)
-  --lcd            the LCD editor and the displays on this Pi (lcd-editor/); it stays on when this is run again
+  --lcd            the LCD editor and the displays on this Pi (lcd-editor/), with its packages from apt and
+                   I2C and SPI turned on (after a restart); it stays on when this is run again
   --no-lcd         no LCD editor (stops it if it runs)
   -y, --yes       don't ask; use what is given and what is set up already
   -h, --help       this text
@@ -290,7 +298,8 @@ fi
 
 # LCD-editoren er av, med mindre --lcd er gitt nå eller den er slått på fra før. Den er Python: den
 # trenger 3.11 eller nyere med flask og PIL, fra lcd-editor/.venv eller systemets python3.
-# LCD_CHECK skriver det som mangler (exit 1), eller hva displayene må klare seg uten.
+# LCD_CHECK skriver det som mangler (exit 1, eller 2 når det er flask eller PIL, som apt kan
+# installere), eller hva displayene må klare seg uten.
 LCD_CHECK='
 import importlib.util, sys
 def has(m):
@@ -304,7 +313,7 @@ if sys.version_info < (3, 11):
 need = [p for m, p in (("flask", "python3-flask"), ("PIL", "python3-pil")) if not has(m)]
 if need:
     print("python3 needs %s: sudo apt install %s" % (" and ".join(need), " ".join(need)))
-    sys.exit(1)
+    sys.exit(2)
 without = [w for m, w in (("psutil", "the system values (python3-psutil)"), ("smbus2", "I2C displays (python3-smbus2)"),
                           ("luma.oled", "OLEDs (luma.oled, see lcd-editor/README.md)")) if not has(m)]
 tft = [p for m, p in (("spidev", "python3-spidev"), ("lgpio", "python3-lgpio"), ("numpy", "python3-numpy")) if not has(m)]
@@ -323,28 +332,76 @@ except (OSError, ValueError) as e:
     print("%s can not be read: %s" % (sys.argv[1], e))
     sys.exit(1)
 '
+# BOOT_CHECK (awk) leser config.txt og skriver det displayene mangler der: i2c, spi, eller spi-miso
+# når spi0-1cs er der uten no_miso. Bare linjene som gjelder alle Pi-er, teller: før den første
+# [filteren] og etter [all]. En dtparam etter en dtoverlay er overlayets, hvis det har den.
+BOOT_CHECK='
+  function on(v) { return v == "" || v ~ /^=(on|true|yes|okay|1)$/ }
+  BEGIN { all = 1 }
+  { s = $0; sub(/\r$/, "", s); sub(/^[ \t]+/, "", s); sub(/[ \t]+$/, "", s) }
+  s ~ /^\[/ { all = (s ~ /^\[all\]/); next }
+  !all || s ~ /^#/ { next }
+  s ~ /^dtoverlay=/ {
+    n = split(substr(s, 11), a, ","); ov = a[1]
+    if (ov == "spi0-1cs") { spi = 1; miso = 1; for (i = 2; i <= n; i++) if (a[i] ~ /^no_miso/ && on(substr(a[i], 8))) miso = 0 }
+    next
+  }
+  s ~ /^dtparam=/ {
+    n = split(substr(s, 9), a, ",")
+    for (i = 1; i <= n; i++) {
+      if (ov == "spi0-1cs" && a[i] ~ /^no_miso/) { if (on(substr(a[i], 8))) miso = 0 }
+      else if (a[i] ~ /^i2c_arm(=|$)/) i2c = on(substr(a[i], 8))
+      else if (a[i] ~ /^i2c(=|$)/) i2c = on(substr(a[i], 4))
+    }
+  }
+  END { if (!i2c) print "i2c"; if (!spi) print "spi"; else if (miso) print "spi-miso" }
+'
+
+# lcd_check: Pythonen til editoren (lcd_python, lcd_port, og lcd_without: hva displayene klarer seg
+# uten), eller hvorfor ikke (lcd_missing). Exit 2 når apt kan hjelpe: flask eller PIL mangler.
+lcd_check() {
+  local py out rc ret=1
+  lcd_python='' lcd_without='' lcd_port='' lcd_missing="python3 isn't installed"
+  for py in "$LCD_DIR/.venv/bin/python3" /usr/bin/python3; do
+    [ -x "$py" ] || continue
+    # -I: bare Pythons egne mapper (ikke den vi står i), -B: ingen .pyc-filer
+    rc=0; out=$("$py" -I -B -c "$LCD_CHECK" 2>&1) || rc=$?
+    if [ $rc -eq 0 ]; then
+      lcd_port=$("$py" -I -B -c "$LCD_PORT" "$LCD_DIR/config.toml" 2>&1) || { lcd_missing=$lcd_port; lcd_port=''; return 1; }
+      lcd_python=$py lcd_without=$out lcd_missing=''
+      return 0
+    fi
+    lcd_missing=$out
+    [ $rc -ne 2 ] || ret=2
+  done
+  return $ret
+}
+
+# lcd_packages_missing: pakkene i LCD_PACKAGES som ikke er installert
+lcd_packages_missing() {
+  local p out=''
+  for p in $LCD_PACKAGES; do
+    [ "$(dpkg-query -W -f='${db:Status-Status}' "$p" 2>/dev/null)" = installed ] || out="$out $p"
+  done
+  printf '%s' "${out# }"
+}
+
 lcd=0
 case $lcd_flag in
   on)  lcd=1 ;;
   '')  if systemctl is-enabled --quiet kjoreverk-lcd.service 2>/dev/null; then lcd=1; fi ;;
 esac
-lcd_missing='' lcd_python='' lcd_without='' lcd_port='' lcd_groups=''
+lcd_missing='' lcd_python='' lcd_without='' lcd_port='' lcd_groups='' lcd_apt='' lcd_boot='' lcd_after_apt=0
 if [ $lcd -eq 1 ]; then
   if [ ! -f "$LCD_DIR/app/__main__.py" ]; then lcd_missing="$LCD_DIR is missing: copy the whole project folder"
   elif systemctl is-active --quiet "$OLD_LCD_SERVICE" 2>/dev/null; then
     lcd_missing="the LCD editor's own service ${OLD_LCD_SERVICE%.service} runs, on the same port and displays: sudo systemctl disable --now ${OLD_LCD_SERVICE%.service}, then run this again with --lcd"
   else
-    for py in "$LCD_DIR/.venv/bin/python3" /usr/bin/python3; do
-      [ -x "$py" ] || continue
-      # -I: bare Pythons egne mapper (ikke den vi står i), -B: ingen .pyc-filer
-      if out=$("$py" -I -B -c "$LCD_CHECK" 2>&1); then lcd_python=$py; lcd_without=$out; break; fi
-      lcd_missing=$out
-    done
-    if [ -n "$lcd_python" ]; then
-      lcd_missing=''
-      lcd_port=$("$lcd_python" -I -B -c "$LCD_PORT" "$LCD_DIR/config.toml" 2>&1) || { lcd_missing=$lcd_port; lcd_python=''; }
-    elif [ -z "$lcd_missing" ]; then lcd_missing="python3 isn't installed"
-    fi
+    if command -v apt-get >/dev/null 2>&1 && command -v dpkg-query >/dev/null 2>&1; then lcd_apt=$(lcd_packages_missing); fi
+    rc=0; lcd_check || rc=$?
+    # flask eller PIL mangler: apt installerer dem først, og så ser skriptet etter igjen
+    if [ $rc -eq 2 ] && [ -n "$lcd_apt" ]; then lcd_missing='' lcd_after_apt=1; fi
+    if [ -f "$BOOT_CONFIG" ]; then lcd_boot=$(awk "$BOOT_CHECK" "$BOOT_CONFIG" | tr '\n' ' '); lcd_boot=${lcd_boot% }; fi
   fi
   [ -z "$lcd_missing" ] || lcd=0
   # I2C, SPI og GPIO-ene: gruppene som finnes (Raspberry Pi OS har dem)
@@ -369,8 +426,18 @@ elif [ -n "$bt_missing" ]; then say "  Bluetooth    NOT SET UP: $bt_missing"
 else say "  Bluetooth    off (--no-bluetooth)"
 fi
 if [ $lcd -eq 1 ]; then
-  say "  LCD editor   port $lcd_port, the displays in lcd-editor/config.toml, with $lcd_python"
-  [ -z "$lcd_without" ] || say "               without $lcd_without"
+  if [ $lcd_after_apt -eq 1 ]; then say "  LCD editor   the displays in lcd-editor/config.toml, once apt has installed the packages"
+  else say "  LCD editor   port $lcd_port, the displays in lcd-editor/config.toml, with $lcd_python"
+  fi
+  [ -z "$lcd_apt" ] || say "               apt-get install $lcd_apt"
+  if [ ! -f "$BOOT_CONFIG" ]; then say "               I2C and SPI as they are: there's no $BOOT_CONFIG"
+  else
+    turn=''
+    case " $lcd_boot " in *" i2c "*) turn=I2C ;; esac
+    case " $lcd_boot " in *" spi "*) turn=${turn:+$turn and }SPI ;; esac
+    [ -z "$turn" ] || say "               $turn turned on in $BOOT_CONFIG, after a restart"
+  fi
+  [ -n "$lcd_apt" ] || [ -z "$lcd_without" ] || say "               without $lcd_without"
 elif [ -n "$lcd_missing" ]; then say "  LCD editor   NOT SET UP: $lcd_missing"
 else say "  LCD editor   off (--lcd sets it up)"
 fi
@@ -615,8 +682,81 @@ else
 fi
 
 # ---------------------------------------------------------------- LCD-editoren
+# apt_install <pakker>: uten spørsmål, og uten å vente lenge på et nett som ikke er der
+APT_NET=(-o Acquire::Retries=1 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20)
+apt_install() {
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -q --no-install-recommends -o DPkg::Lock::Timeout=120 "${APT_NET[@]}" \
+    -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold "$@" 2>&1
+}
+apt_errors() {   # apt_errors <det apt skrev>: feillinjene, hver bare én gang, rykket inn
+  { grep -E '^(E|Err|W):' <<<"$1" || tail -n 3 <<<"$1"; } | awk '!seen[$0]++' | tail -n 6 | sed 's/^/    /'
+}
+
+# boot_add <linjer>: legger linjene nederst i config.txt, i en [all]-del, så de gjelder alle Pi-er.
+# Filen ligger på FAT og er det Pi-en starter med, så den skrives ikke på nytt, bare legges til.
+boot_add() {
+  {
+    [ ! -s "$BOOT_CONFIG" ] || [ -z "$(tail -c 1 "$BOOT_CONFIG")" ] || echo
+    printf '\n# install.sh --lcd: I2C and SPI for the displays on X1 (lcd-editor/README.md)\n[all]\n'
+    printf '%s\n' "$@"
+  } >> "$BOOT_CONFIG"
+  sync "$BOOT_CONFIG" 2>/dev/null || sync
+}
+
+lcd_was_on=0 lcd_reboot=0
+if systemctl is-enabled --quiet kjoreverk-lcd.service 2>/dev/null || systemctl is-active --quiet kjoreverk-lcd.service 2>/dev/null; then lcd_was_on=1; fi
+if [ $lcd -eq 1 ] || [ $lcd_was_on -eq 1 ]; then step "The LCD editor"; fi
 if [ $lcd -eq 1 ]; then
-  step "The LCD editor"
+  # Pakkene som mangler, fra apt. Uten internett får apt bare installert det den har lastet ned fra
+  # før; det som fortsatt mangler, klarer displayene seg uten (men editoren ikke uten flask og PIL).
+  if [ -n "$lcd_apt" ]; then
+    say "  installing $lcd_apt (apt-get, it can take a few minutes)"
+    rc=0; out=$(apt_install $lcd_apt) || rc=$?
+    if [ $rc -ne 0 ]; then
+      # gamle pakkelister, eller en pakke apt ikke kjenner: nye lister, og så de pakkene apt kjenner
+      say "  updating   the package lists (apt-get update)"
+      upd=$(DEBIAN_FRONTEND=noninteractive apt-get update -q "${APT_NET[@]}" 2>&1) || out=$out$'\n'$upd
+      known=''
+      for p in $lcd_apt; do if apt-cache show "$p" >/dev/null 2>&1; then known="$known $p"; fi; done
+      if [ -n "$known" ]; then out=$out$'\n'$(apt_install $known) || true; fi
+    fi
+    left=$(lcd_packages_missing) got=''
+    for p in $lcd_apt; do case " $left " in *" $p "*) ;; *) got="$got $p" ;; esac; done
+    [ -z "$got" ] || say "  installed $got"
+    if [ -n "$left" ]; then
+      warn "apt couldn't install $left:"
+      apt_errors "$out" >&2
+    fi
+    if lcd_check; then [ -z "$lcd_without" ] || say "  without    $lcd_without"
+    else lcd=0
+    fi
+  fi
+
+  # I2C og SPI til displayene i pluggen X1. De står i config.txt, så de er på etter neste omstart.
+  if [ ! -f "$BOOT_CONFIG" ]; then
+    say "  I2C, SPI   as they are: there's no $BOOT_CONFIG (see lcd-editor/README.md)"
+  else
+    boot_lines=()
+    for b in $lcd_boot; do
+      case $b in
+        i2c) boot_lines+=("$BOOT_I2C") ;;
+        spi) boot_lines+=("$BOOT_SPI") ;;
+        spi-miso) warn "$BOOT_CONFIG has dtoverlay=spi0-1cs without no_miso, so SPI keeps MISO (GPIO 9), the TFT's light: make the line $BOOT_SPI" ;;
+      esac
+    done
+    if [ ${#boot_lines[@]} -gt 0 ]; then
+      boot_add "${boot_lines[@]}"
+      lcd_reboot=1
+      say "  added      $(printf '%s and ' "${boot_lines[@]}" | sed 's/ and $//') to $BOOT_CONFIG"
+    elif [ -z "$lcd_boot" ]; then
+      say "  unchanged  $BOOT_CONFIG: I2C and SPI are on"
+    fi
+  fi
+  mkdir -p "$(dirname "$LCD_MODULES")"
+  printf '# Written by %s/install.sh (--lcd): /dev/i2c-1 for the displays on I2C.\ni2c-dev\n' "$PROJECT" | put "$LCD_MODULES" 644
+  [ $CHANGED -eq 0 ] || modprobe -q i2c-dev 2>/dev/null || true
+fi
+if [ $lcd -eq 1 ]; then
   # deploy lagrer hva displayene viser i state/, når noen trykker på knappen; ellers skrives ingenting
   install -d -o "$user" -g "$group" "$LCD_DIR/state"
   {
@@ -646,8 +786,7 @@ WantedBy=multi-user.target
 EOF
   } | put "$LCD_UNIT" 644
   say "  the editor on port $lcd_port drives the displays in lcd-editor/config.toml"
-elif systemctl is-enabled --quiet kjoreverk-lcd.service 2>/dev/null || systemctl is-active --quiet kjoreverk-lcd.service 2>/dev/null; then
-  step "The LCD editor"
+elif [ $lcd_was_on -eq 1 ]; then
   systemctl disable --now --quiet kjoreverk-lcd.service || true
   say "  stopped    kjoreverk-lcd.service"
 fi
@@ -729,6 +868,7 @@ if [ $bluetooth -eq 1 ]; then
   say "  Bluetooth    pair with \"$bt_name\", PIN $bt_pin, turn on Internet access, then http://$bt_address:$HUB_PORT"
 fi
 [ $lcd -eq 0 ] || say "  LCD editor   http://${ip:-<this-pi>}:$lcd_port"
+[ $lcd_reboot -eq 0 ] || say "  restart      sudo reboot: I2C and SPI for the displays are on after it"
 say "  logs         journalctl -u 'kjoreverk@*' -f"
 say "  again        sudo bash $PROJECT/install.sh   (after an update, or to change something)"
 # Etter alt annet, så et wifi-brudd ikke stopper skriptet midt i (over ssh)

@@ -115,29 +115,28 @@ til igjen mens editoren kjører, kommer bildet tilbake av seg selv. Ser du ingen
 
 ## 2. Slå på I2C og SPI (én gang)
 
-```bash
-sudo raspi-config nonint do_i2c 0     # eller: sudo raspi-config → Interface Options → I2C
-sudo reboot
-```
-
-Etter omstart skal displayet dukke opp (OLED vanligvis som `3c`, LCD som `27` eller `3f`):
-
-```bash
-i2cdetect -y 1
-```
-
-Tips: for raskere oppdatering, legg `dtparam=i2c_arm_baudrate=400000` i `/boot/firmware/config.txt`.
-
-For farge-TFT-en må **SPI** slås på, med CE1 og MISO som vanlige GPIO-er (se 1.). Legg dette nederst
-i `/boot/firmware/config.txt` og start Pi-en på nytt:
+`install.sh --lcd` (se 3.) gjør dette. Den legger to linjer nederst i `/boot/firmware/config.txt`, i en
+`[all]`-del, hvis de ikke står der fra før. Den sørger også for at `i2c-dev` lastes, med
+`/etc/modules-load.d/kjoreverk-lcd.conf`.
 
 ```
+dtparam=i2c_arm=on
 dtoverlay=spi0-1cs,no_miso
 ```
 
+Den andre linjen gir SPI med bare én CS og uten MISO, så CE1 og MISO blir vanlige GPIO-er til
+TFT-ens DC og lys (se 1.). Står det `dtoverlay=spi0-1cs` uten `no_miso` fra før, endrer ikke skriptet
+linjen, men sier fra. Uten `install.sh` legger du linjene inn selv.
+
+Linjene virker etter en omstart, og `install.sh` sier fra til slutt når det trengs: `sudo reboot`.
+Etterpå skal displayene dukke opp:
+
 ```bash
+i2cdetect -y 1                        # OLED vanligvis som 3c, LCD som 27 eller 3f
 ls /dev/spidev0.*                     # skal vise bare /dev/spidev0.0
 ```
+
+Tips: for raskere oppdatering, legg `dtparam=i2c_arm_baudrate=400000` i `/boot/firmware/config.txt`.
 
 Lysstyrken styres med programvare-PWM, som kan flimre litt på delvis lysstyrke. Maskinvare-PWM
 finnes bare på GPIO 12, 13, 18 og 19, og i kjøreverket går alle fire til kortet.
@@ -145,7 +144,7 @@ finnes bare på GPIO 12, 13, 18 og 19, og i kjøreverket går alle fire til kort
 ## 3. Start editoren
 
 Editoren er av som standard. `install.sh` setter den opp som tjenesten `kjoreverk-lcd` når du ber om
-det, og så er den på til du slår den av:
+det, med pakkene den trenger og I2C og SPI på (se 2.), og så er den på til du slår den av:
 
 ```bash
 sudo bash /opt/kjoreverk/install.sh --lcd       # på, også etter omstart
@@ -157,7 +156,8 @@ journalctl -u kjoreverk-lcd -f                  # loggen
 over Bluetooth. **HMI ↗** øverst til høyre åpner HMI-et på samme Pi. Den sist deployede layouten vises
 igjen av seg selv etter en omstart.
 
-**Pi-en trenger** Raspberry Pi OS Bookworm eller nyere (Python 3.11 eller nyere), og noen pakker fra apt:
+**Pi-en trenger** Raspberry Pi OS Bookworm eller nyere (Python 3.11 eller nyere), og noen pakker fra
+apt. `install.sh --lcd` installerer dem som mangler:
 
 | Pakker | Til |
 |---|---|
@@ -166,10 +166,13 @@ igjen av seg selv etter en omstart.
 | `python3-smbus2` | displayene på I2C: OLED og LCD |
 | `python3-lgpio` | inngangene INN0–INN7, og TFT-en |
 | `python3-spidev python3-numpy` | TFT-en |
+| `i2c-tools` | `i2cdetect`, som finner displayene på I2C |
 | `luma.oled` (ikke i apt, se under) | OLED-ene |
 
-`install.sh --lcd` sier hva som mangler, og setter ikke opp editoren uten flask og PIL. Et display som
-mangler sin pakke, kjører emulert, og editoren sier hvorfor.
+Pakkene lastes ned, så Pi-en trenger internett første gang. Får apt ikke installert noen av dem, sier
+`install.sh` hvilke, og du kan kjøre den igjen når Pi-en har nett. Uten flask og PIL setter den ikke
+opp editoren; resten av kjøreverket settes opp som vanlig. Et display som mangler sin pakke, kjører
+emulert, og editoren sier hvorfor.
 
 **`luma.oled`** installeres i en `.venv` i `lcd-editor/`, som `install.sh` bruker når den finnes:
 

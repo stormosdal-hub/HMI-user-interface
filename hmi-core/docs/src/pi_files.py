@@ -131,6 +131,8 @@ etc_entries = [
     (0, 'dhcpcd.conf', 'denyinterfaces pan0 bnep*: dhcpcd lar Bluetooth-nettet være', CYAN),
     (0, 'default/', '', INK),
     (1, 'dhcp-helper', '-e pan0: reléet for PLS-siden sender ikke nettbrettenes DHCP videre', CYAN),
+    (0, 'modules-load.d/', '', INK),
+    (1, 'kjoreverk-lcd.conf', 'i2c-dev, så displayene på I2C får /dev/i2c-1 (med --lcd)', CYAN),
 ]
 etc_end, etc_mid = tree(EX + 26, TOP + 84, EW - 26, EX + 330, etc_entries)
 etc_nat = etc_end + 18 - TOP
@@ -216,7 +218,7 @@ services = [
     ('kjoreverk-lcd', ['python3 -B -m app'], [
         'LCD-editoren: http://<pi>:8000. Skjermbilder til displayene, med taggene fra huben.',
         'Displayene henger i pluggen X1, på I2C og SPI. Bryterne på INN0–INN7 blar mellom fanene.',
-        ('Bare med install.sh --lcd. Leser lcd-editor/config.toml og vehicle.', INK3)],
+        ('Bare med install.sh --lcd, som også installerer pakkene og slår på I2C og SPI i /boot/firmware/config.txt. Leser lcd-editor/config.toml og vehicle.', INK3)],
      ['nettleserne, port 8000', 'displayene på X1', 'inngangene INN0–INN7']),
 ]
 TW = (W - 96 - (len(services) - 1) * GAP) / len(services)
