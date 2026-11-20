@@ -8,7 +8,7 @@ kjøreverk. De kjører som **systemd-tjenester**, slik at de:
 - kjører uten internett (systemd er helt lokalt)
 
 **`install.sh` setter opp alt:** kjøreverkets navn, tjenestene, recorderen, klokka, loggene og
-HMI-et over Bluetooth.
+HMI-et over Bluetooth. LCD-editoren for displayer på Pi-en setter den opp når du ber om det (`--lcd`).
 Kopier prosjektmappen til Pi-en, kjør skriptet, og kjøreverket er i drift. Resten av filen
 forklarer hva skriptet gjør, og hvordan det gjøres for hånd.
 
@@ -16,7 +16,7 @@ forklarer hva skriptet gjør, og hvordan det gjøres for hånd.
 
 | Hva | Verdi |
 |---|---|
-| Prosjektmappen | `/opt/kjoreverk` (med `install.sh`, `batch-interval.sh`, denne filen, `hmi-core/` og `bluetooth/`) |
+| Prosjektmappen | `/opt/kjoreverk` (med `install.sh`, `batch-interval.sh`, denne filen, `hmi-core/`, `bluetooth/` og `lcd-editor/`) |
 | Tjenestene | `kjoreverk@hub.service`, `kjoreverk@tcplink-adapter.service` (PLS-en), `kjoreverk@plcdiag-adapter.service` (PLS-ens diagnosebuffer, fra web-serveren) og `kjoreverk@recorder.service` (den sentrale serveren) |
 | Malenheten | `/etc/systemd/system/kjoreverk@.service` |
 | Kjøreverkets navn | `/etc/kjoreverk/vehicle` |
@@ -28,6 +28,7 @@ forklarer hva skriptet gjør, og hvordan det gjøres for hånd.
 | HMI-et over Bluetooth | `http://192.168.1.<kjøreverksnummer>:8080` (kv_52: `192.168.1.52`), se [HMI-et over Bluetooth](#hmi-et-over-bluetooth) |
 | Bluetooth-tjenestene | `kjoreverk-bt.service` og `kjoreverk-bt-dhcp.service`, programmene i `/usr/local/lib/kjoreverk-bt` |
 | PIN-koden for Bluetooth | `/etc/kjoreverk/bt.json`, lesbar bare for root |
+| LCD-editoren (bare med `--lcd`) | `kjoreverk-lcd.service`, på `http://<pi-ip>:8000`, se [LCD-editoren og displayene](#lcd-editoren-og-displayene) |
 
 ![Filene på Pi-en: prosjektmappen i /opt/kjoreverk, oppsettet install.sh skriver i /etc, og tjenestene systemd starter](hmi-core/docs/pi-files.svg)
 
@@ -118,6 +119,8 @@ sudo bash /opt/kjoreverk/install.sh --vehicle kv_53 --plc 10.0.123.51:2000 \
 | `--no-bluetooth` | Ikke HMI-et over Bluetooth. Kjører det, stoppes det, og det er av også neste gang skriptet kjøres |
 | `--bluetooth` | Bluetooth på igjen etter `--no-bluetooth`. Uten noen av dem er det på |
 | `--bt-pin 12345678` | PIN-koden et nettbrett taster én gang for å pare, 4–16 sifre. Standard: den som står fra før, ellers en ny tilfeldig på 8 sifre |
+| `--lcd` | LCD-editoren og displayene på Pi-en (`lcd-editor/`). Den er på også neste gang skriptet kjøres. Uten valget er den av, med mindre den er slått på fra før |
+| `--no-lcd` | Ingen LCD-editor. Kjører den, stoppes den |
 | `--yes` | Ikke spør: bruk valgene og det som står fra før. Mangler navnet, avbryter skriptet |
 
 ### Hva skriptet gjør
@@ -134,6 +137,7 @@ sudo bash /opt/kjoreverk/install.sh --vehicle kv_53 --plc 10.0.123.51:2000 \
 | Bluetooth: programmene fra `bluetooth/`, som kjører som root, og PIN-koden (`600`, `root`) | `/usr/local/lib/kjoreverk-bt/`, `/etc/kjoreverk/bt.json` |
 | Bluetooth: tjenestene | `/etc/systemd/system/kjoreverk-bt.service` og `kjoreverk-bt-dhcp.service` |
 | Bluetooth: dhcpcd lar `pan0` og `bnep*` være, og dhcp-helper sender ikke nettbrettenes DHCP videre | `denyinterfaces` i `/etc/dhcpcd.conf`, `-e pan0` i `/etc/default/dhcp-helper` |
+| LCD-editoren (med `--lcd`): tjenesten, som kjører `lcd-editor/` med Python | `/etc/systemd/system/kjoreverk-lcd.service` |
 
 Så slår den på og starter (eller starter på nytt) tjenestene. En tjeneste fra før med et program
 som ikke lenger finnes i prosjektet, som `kjoreverk@binary-adapter.service`, stoppes og slås av.
@@ -148,7 +152,7 @@ som ikke lenger finnes i prosjektet, som `kjoreverk@binary-adapter.service`, sto
 ### Kjøre det på nytt og oppdatere
 
 Skriptet kan kjøres så ofte du vil, og det er slik en oppdatering tas i bruk. Det som står fra
-før (navnet, PLS-en, serveren, nøkkelen, brukeren, PIN-koden og om Bluetooth er på), blir
+før (navnet, PLS-en, serveren, nøkkelen, brukeren, PIN-koden, og om Bluetooth og LCD-editoren er på), blir
 standard, og tjenestene startes på nytt med den nye koden. At det er kjørt før, gjør ingenting:
 filer som ikke er endret, lar det være.
 
@@ -404,6 +408,36 @@ wifi. `install.sh` setter det opp, med mindre `--no-bluetooth` er gitt.
 **Feilsøking:** `journalctl -u kjoreverk-bt -u kjoreverk-bt-dhcp -f` viser paringen
 («pairing request from …»), tilkoblingene og adressene nettbrettene får («gave 192.168.1.200 to …»).
 
+## LCD-editoren og displayene
+
+For å eksperimentere med displayer på Pi-en: OLED-er (SSD1306) og tegn-LCD-er (1602/2004) på I2C, og
+farge-TFT-er (ST7789) på SPI. Editoren i nettleseren lager skjermbildene, med taggene fra huben som
+datakilder (de samme navnene som i HMI-et), og *Deploy* viser dem på displayet. Alt om editoren,
+koblingen og pakkene den trenger, står i `lcd-editor/README.md`.
+
+```bash
+sudo bash /opt/kjoreverk/install.sh --lcd       # på, også etter omstart og neste gang skriptet kjøres
+sudo bash /opt/kjoreverk/install.sh --no-lcd    # av
+```
+
+- **Editoren** er på `http://<pi-ip>:8000`, også over Bluetooth (`http://192.168.1.52:8000` for kv_52).
+- **Den er Python**, ikke Node: den trenger Raspberry Pi OS Bookworm eller nyere og
+  `sudo apt install python3-flask python3-pil`, og flere pakker for displayene. Mangler noe,
+  sier skriptet hva, og setter den ikke opp; resten av oppsettet går som før.
+- **Den leser bare** fra huben, som recorderen, og når huben er borte, viser displayene `--`.
+- **Tjenesten** `kjoreverk-lcd.service` kjører `python3 -B -m app` i `lcd-editor/` som samme bruker
+  som de andre, med gruppene `i2c`, `spi` og `gpio` (de som finnes). Displayene og porten står i
+  `lcd-editor/config.toml`; etter en endring der: `sudo systemctl restart kjoreverk-lcd`.
+- **Koble displayene til pluggen X1** på RaspiPower-kortet: den har strøm, I2C og SPI. De andre
+  GPIO-ene går til kortets innganger og 24 V-utganger. TFT-en trenger i tillegg
+  `dtoverlay=spi0-1cs,no_miso` i `/boot/firmware/config.txt`; koblingen står i `lcd-editor/README.md`.
+- **En layout kan ha flere faner,** og bryterne på kortets innganger INN0–INN7 (24 V, på SV2) blar
+  mellom dem. Hva hver inngang gjør, velger du i editoren. Editoren leser inngangene med
+  `python3-lgpio`, og fanen som vises, lagres ikke.
+- **Layoutene** du lagrer, ligger i `lcd-editor/layouts/` og kopieres med resten av prosjektet. Kopier
+  dem fra Pi-en før du oppdaterer, ellers blir de som heter det samme, skrevet over. Hva displayene
+  viser (`lcd-editor/state/`), følger ikke med prosjektet og blir stående.
+
 ## Legge til et nytt program
 
 Ingen ny enhetsfil trengs — bare to kommandoer:
@@ -512,3 +546,5 @@ Alle skal være `active (running)` uten at du har kjørt noen kommandoer for hå
 | Fjern et nettbrett | `sudo bluetoothctl remove <adressen>` |
 | Loggene for Bluetooth | `journalctl -u kjoreverk-bt -u kjoreverk-bt-dhcp -f` |
 | Slå av HMI-et over Bluetooth | `sudo bash /opt/kjoreverk/install.sh --no-bluetooth --yes` |
+| Slå på LCD-editoren / slå den av | `sudo bash /opt/kjoreverk/install.sh --lcd --yes` / `--no-lcd --yes` |
+| Loggen for LCD-editoren | `journalctl -u kjoreverk-lcd -f` |

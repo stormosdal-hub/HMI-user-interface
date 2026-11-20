@@ -1,0 +1,151 @@
+{
+ "name": "Systemstatus",
+ "width": 128,
+ "height": 64,
+ "refresh": 1,
+ "invert": false,
+ "elements": [
+  {
+   "id": "host",
+   "type": "text",
+   "text": "{hostname}",
+   "x": 0,
+   "y": 1,
+   "font": "Silkscreen-Regular",
+   "size": 8,
+   "align": "left",
+   "spacing": 1,
+   "color": 1
+  },
+  {
+   "id": "clock",
+   "type": "text",
+   "text": "{time}",
+   "x": 128,
+   "y": 1,
+   "font": "Silkscreen-Regular",
+   "size": 8,
+   "align": "right",
+   "spacing": 1,
+   "color": 1
+  },
+  {
+   "id": "sep",
+   "type": "line",
+   "x": 0,
+   "y": 9,
+   "x2": 127,
+   "y2": 9,
+   "width": 1,
+   "color": 1
+  },
+  {
+   "id": "i-temp",
+   "type": "icon",
+   "icon": "thermometer",
+   "x": 0,
+   "y": 13,
+   "scale": 1,
+   "color": 1
+  },
+  {
+   "id": "v-temp",
+   "type": "value",
+   "source": "cpu_temp",
+   "decimals": 1,
+   "prefix": "",
+   "suffix": "°C",
+   "x": 11,
+   "y": 15,
+   "font": "Silkscreen-Regular",
+   "size": 8,
+   "align": "left",
+   "spacing": 1,
+   "color": 1
+  },
+  {
+   "id": "i-cpu",
+   "type": "icon",
+   "icon": "cpu",
+   "x": 62,
+   "y": 13,
+   "scale": 1,
+   "color": 1
+  },
+  {
+   "id": "b-cpu",
+   "type": "bar",
+   "source": "cpu_percent",
+   "x": 73,
+   "y": 13,
+   "w": 55,
+   "h": 8,
+   "min": 0,
+   "max": 100,
+   "border": true,
+   "vertical": false,
+   "color": 1
+  },
+  {
+   "id": "i-wifi",
+   "type": "icon",
+   "icon": "wifi",
+   "x": 0,
+   "y": 24,
+   "scale": 1,
+   "color": 1
+  },
+  {
+   "id": "v-ip",
+   "type": "text",
+   "text": "{ip}",
+   "x": 11,
+   "y": 26,
+   "font": "Silkscreen-Regular",
+   "size": 8,
+   "align": "left",
+   "spacing": 1,
+   "color": 1
+  },
+  {
+   "id": "v-mem",
+   "type": "text",
+   "text": "RAM {mem_percent:.0f}%",
+   "x": 128,
+   "y": 26,
+   "font": "Silkscreen-Regular",
+   "size": 8,
+   "align": "right",
+   "spacing": 1,
+   "color": 1
+  },
+  {
+   "id": "g-cpu",
+   "type": "graph",
+   "source": "cpu_percent",
+   "x": 0,
+   "y": 35,
+   "w": 128,
+   "h": 29,
+   "min": 0,
+   "max": 100,
+   "span": 120,
+   "style": "bars",
+   "border": true,
+   "color": 1
+  },
+  {
+   "id": "g-label",
+   "type": "text",
+   "text": "CPU 2 MIN",
+   "x": 4,
+   "y": 38,
+   "font": "Silkscreen-Regular",
+   "size": 8,
+   "align": "left",
+   "spacing": 1,
+   "color": 2
+  }
+ ],
+ "updated": 1794300222.0127583
+}

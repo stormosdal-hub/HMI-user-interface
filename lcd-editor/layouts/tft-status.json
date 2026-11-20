@@ -1,0 +1,17 @@
+{
+ "name": "TFT-status",
+ "kind": "color",
+ "width": 284,
+ "height": 76,
+ "refresh": 1,
+ "background": "#0b1a2a",
+ "elements": [
+  {"id": "time", "type": "text", "text": "{time}", "font": "DejaVuSans-Bold", "size": 30, "align": "left", "spacing": 1, "x": 8, "y": 9, "color": "#ffffff"},
+  {"id": "ico", "type": "icon", "icon": "thermometer", "scale": 2, "x": 152, "y": 13, "color": "#ff4d4d"},
+  {"id": "temp", "type": "value", "source": "cpu_temp", "decimals": 1, "prefix": "", "suffix": "°C", "font": "DejaVuSans", "size": 22, "align": "right", "spacing": 1, "x": 276, "y": 14, "color": "#ffd23f"},
+  {"id": "rule", "type": "rect", "x": 0, "y": 47, "w": 284, "h": 1, "fill": true, "radius": 0, "width": 1, "color": "#2a3f55"},
+  {"id": "lbl", "type": "text", "text": "CPU", "font": "DejaVuSans-Bold", "size": 11, "align": "left", "spacing": 1, "x": 8, "y": 57, "color": "#8a96a3"},
+  {"id": "bar", "type": "bar", "source": "cpu_percent", "min": 0, "max": 100, "border": true, "vertical": false, "x": 40, "y": 55, "w": 100, "h": 13, "color": "#3ecf8e"},
+  {"id": "graph", "type": "graph", "source": "cpu_percent", "min": 0, "max": 100, "span": "", "style": "line", "border": false, "x": 152, "y": 53, "w": 124, "h": 18, "color": "#2ec4f1"}
+ ]
+}

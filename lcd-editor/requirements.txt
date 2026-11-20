@@ -1,0 +1,12 @@
+# Fra apt på Raspberry Pi OS (Bookworm eller nyere): python3-flask python3-pil python3-psutil python3-smbus2,
+# og til TFT-en python3-spidev python3-lgpio python3-numpy. Bare luma.oled (OLED-ene) må hentes med pip,
+# i en .venv: se «Start editoren» i README.md.
+flask>=2.0
+pillow>=9.1
+psutil>=5.9
+smbus2>=0.4
+luma.oled>=3.13
+# farge-TFT (ST7789)
+spidev>=3.5
+lgpio>=0.2
+numpy>=1.20

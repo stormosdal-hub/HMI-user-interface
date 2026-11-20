@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="no">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LCD-editor</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Crect width='16' height='16' rx='3' fill='%23101418'/%3E%3Crect x='3' y='4' width='10' height='2' fill='%2355c8ff'/%3E%3Crect x='3' y='8' width='6' height='2' fill='%2355c8ff'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand"><span class="brand-mark"></span>LCD-editor<span id="vehicle" class="vehicle" hidden></span></div>
+    <div class="name-wrap">
+      <input id="layout-name" class="name-input" spellcheck="false" title="Navn på layouten" aria-label="Navn på layouten">
+      <span id="dirty-dot" class="dirty-dot" title="Ulagrede endringer" hidden></span>
+    </div>
+    <div class="btn-group">
+      <button id="btn-new" type="button">Ny</button>
+      <button id="btn-open" type="button">Åpne…</button>
+      <button id="btn-save" type="button" title="Ctrl+S">Lagre</button>
+      <button id="btn-export" type="button" title="Last ned som JSON">Eksporter</button>
+      <button id="btn-import" type="button" title="Last inn JSON-fil">Importer</button>
+      <input id="import-file" type="file" accept=".json,application/json" hidden>
+    </div>
+    <div class="spacer"></div>
+    <div class="deploy-group">
+      <span id="display-dot" class="status-dot"></span>
+      <select id="display-select" aria-label="Velg display"></select>
+      <button id="btn-deploy" class="primary" type="button" title="Vis layouten på displayet">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 5l11 7-11 7z" fill="currentColor"/></svg>
+        Deploy
+      </button>
+    </div>
+    <a id="hmi-link" class="hmi-link" target="_blank" rel="noopener" title="HMI-et på samme Pi" hidden>HMI ↗</a>
+  </header>
+
+  <main class="workspace">
+    <aside class="panel panel-left">
+      <section>
+        <h2>Legg til</h2>
+        <div id="tools" class="tools"></div>
+      </section>
+      <section>
+        <h2>Layout</h2>
+        <div class="fields">
+          <label class="field"><span>Størrelse</span><select id="layout-size"></select></label>
+          <label class="field"><span>Oppdater (s)</span><input id="layout-refresh" type="number" min="0.1" step="0.1"></label>
+          <label class="field check wide"><input id="layout-invert" type="checkbox"><span>Inverter hele skjermen</span></label>
+          <label id="bg-field" class="field" hidden><span>Bakgrunn</span><input id="layout-bg" type="color"></label>
+        </div>
+      </section>
+      <section>
+        <h2>Fane <span id="tab-pos" class="count"></span></h2>
+        <label class="field"><span>Navn på fanen</span><input id="tab-name" type="text" spellcheck="false"></label>
+        <div class="btn-group tab-actions">
+          <button id="btn-tab-left" type="button" title="Flytt fanen til venstre" aria-label="Flytt fanen til venstre"></button>
+          <button id="btn-tab-right" type="button" title="Flytt fanen til høyre" aria-label="Flytt fanen til høyre"></button>
+          <button id="btn-tab-dup" type="button" title="Dupliser fanen" aria-label="Dupliser fanen"></button>
+          <button id="btn-tab-del" class="danger" type="button" title="Slett fanen" aria-label="Slett fanen"></button>
+        </div>
+        <p class="hint">Skriv <code>{tab}/{tab_count}</code> eller <code>{tab_name}</code> i en tekst for å vise hvilken fane displayet viser.</p>
+      </section>
+      <section class="grow">
+        <h2>Elementer <span id="element-count" class="count"></span></h2>
+        <ul id="element-list" class="element-list"></ul>
+      </section>
+    </aside>
+
+    <section class="stage">
+      <div class="stage-toolbar">
+        <div class="btn-group">
+          <button id="btn-undo" type="button" title="Angre (Ctrl+Z)" aria-label="Angre">
+            <svg viewBox="0 0 24 24"><path d="M9 7L4 12l5 5M4 12h11a5 5 0 0 1 0 10h-2"/></svg>
+          </button>
+          <button id="btn-redo" type="button" title="Gjør om (Ctrl+Shift+Z)" aria-label="Gjør om">
+            <svg viewBox="0 0 24 24"><path d="M15 7l5 5-5 5M20 12H9a5 5 0 0 0 0 10h2"/></svg>
+          </button>
+        </div>
+        <div class="btn-group">
+          <button id="btn-zoom-out" type="button" aria-label="Zoom ut">−</button>
+          <span id="zoom-label" class="zoom-label"></span>
+          <button id="btn-zoom-in" type="button" aria-label="Zoom inn">+</button>
+        </div>
+        <label class="toggle"><input id="grid-toggle" type="checkbox"> Rutenett</label>
+        <select id="theme-select" aria-label="Displayfarge"></select>
+        <div class="spacer"></div>
+        <span id="coords" class="coords"></span>
+      </div>
+      <div id="mismatch" class="mismatch" hidden></div>
+      <div id="tabbar" class="tabbar" role="tablist" aria-label="Faner"></div>
+      <div id="canvas-wrap" class="canvas-wrap">
+        <div class="bezel main">
+          <canvas id="screen" class="screen"></canvas>
+        </div>
+      </div>
+      <div id="warnings" class="warnings"></div>
+      <div class="stage-footer">
+        <div class="live">
+          <div class="live-head">
+            <h2>På displayet nå</h2>
+            <span id="live-info" class="live-info"></span>
+          </div>
+          <div class="live-body">
+            <div class="bezel small"><canvas id="live" class="screen"></canvas></div>
+            <div class="live-controls">
+              <label id="contrast-field" class="field"><span>Kontrast</span><input id="contrast" type="range" min="0" max="255"></label>
+              <div class="btn-group">
+                <button id="btn-power" type="button">Slå av</button>
+                <button id="btn-backlight" type="button" hidden>Lys av</button>
+                <button id="btn-clear" type="button" title="Fjern layouten fra displayet">Tøm</button>
+              </div>
+              <div id="live-tabs" class="btn-group live-tabs" hidden>
+                <button id="btn-live-prev" type="button" title="Forrige fane på displayet" aria-label="Forrige fane på displayet"></button>
+                <span id="live-tab" class="live-tab"></span>
+                <button id="btn-live-next" type="button" title="Neste fane på displayet" aria-label="Neste fane på displayet"></button>
+              </div>
+            </div>
+          </div>
+          <p id="live-hint" class="hint" hidden></p>
+        </div>
+        <div class="inputs-block">
+          <div class="live-head">
+            <h2>Innganger</h2>
+            <span id="inputs-info" class="live-info"></span>
+          </div>
+          <p class="hint">Hva bryterne på INN0–INN7 gjør med fanene i denne layouten. Det virker på displayet etter
+            Deploy. Hold inne en INN-knapp for å prøve uten bryter.</p>
+          <div id="inputs" class="inputs"></div>
+          <p id="inputs-hint" class="hint">Layouten har bare én fane. Lag flere med «+ Ny fane» over skjermen.</p>
+        </div>
+        <p class="shortcuts">
+          <kbd>Piltaster</kbd> flytter · <kbd>Shift</kbd> = 8 px (4 tegn på LCD) · <kbd>Del</kbd> sletter ·
+          <kbd>Ctrl+D</kbd> dupliserer · <kbd>Ctrl+C/V</kbd> kopier/lim inn · <kbd>Ctrl+Z</kbd> angre ·
+          <kbd>Shift</kbd>+dra hjørne = behold forhold
+        </p>
+      </div>
+    </section>
+
+    <aside class="panel panel-right">
+      <section>
+        <h2>Egenskaper</h2>
+        <div id="props"></div>
+      </section>
+      <section class="grow">
+        <h2>Datakilder</h2>
+        <p id="hub-status" class="hub-status" hidden></p>
+        <input id="source-search" class="search" type="search" placeholder="Søk …" aria-label="Søk i datakilder">
+        <p class="hint">Klikk på en kilde for å legge den til som verdi.</p>
+        <div id="sources" class="sources"></div>
+      </section>
+    </aside>
+  </main>
+
+  <dialog id="open-dialog" class="dialog">
+    <form method="dialog">
+      <header><h2>Åpne layout</h2><button class="icon-btn" value="cancel" aria-label="Lukk">✕</button></header>
+      <ul id="layout-list" class="layout-list"></ul>
+    </form>
+  </dialog>
+
+  <div id="toasts" class="toasts" aria-live="polite"></div>
+  <script src="/static/editor.js"></script>
+</body>
+</html>

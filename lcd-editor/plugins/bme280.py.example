@@ -1,0 +1,44 @@
+"""Eksempel-plugin: BME280 temperatur/fuktighet/trykk-sensor på I2C.
+
+Ta i bruk:
+  1. .venv/bin/pip install RPi.bme280
+  2. Gi filen nytt navn til bme280.py (fjern .example)
+  3. sudo systemctl restart oled-editor
+
+En plugin er bare en Python-fil i plugins/ med:
+  read()    -> dict med verdier            (påkrevd)
+  INTERVAL  =  sekunder mellom hver read() (valgfri, standard 5)
+  SOURCES   =  navn -> {"label", "unit"}  (valgfri, gir pene navn i editoren)
+  setup()   -> kjøres én gang ved oppstart (valgfri)
+"""
+
+import bme280
+import smbus2
+
+PORT = 1
+ADDRESS = 0x76  # noen moduler bruker 0x77
+
+INTERVAL = 5
+SOURCES = {
+    "bme_temp": {"label": "Temperatur (BME280)", "unit": "°C"},
+    "bme_humidity": {"label": "Luftfuktighet (BME280)", "unit": "%"},
+    "bme_pressure": {"label": "Lufttrykk (BME280)", "unit": "hPa"},
+}
+
+_bus = None
+_calibration = None
+
+
+def setup():
+    global _bus, _calibration
+    _bus = smbus2.SMBus(PORT)
+    _calibration = bme280.load_calibration_params(_bus, ADDRESS)
+
+
+def read():
+    data = bme280.sample(_bus, ADDRESS, _calibration)
+    return {
+        "bme_temp": round(data.temperature, 1),
+        "bme_humidity": round(data.humidity, 1),
+        "bme_pressure": round(data.pressure, 1),
+    }

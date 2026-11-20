@@ -1,0 +1,16 @@
+"""Minimal eksempel-plugin. Gi nytt navn til demo.py for å prøve den.
+
+Lager en sinusbølge – fint for å teste graf-elementet uten ekte sensorer.
+"""
+
+import math
+import time
+
+INTERVAL = 1
+SOURCES = {
+    "demo_wave": {"label": "Demo-bølge", "unit": ""},
+}
+
+
+def read():
+    return {"demo_wave": round(50 + 40 * math.sin(time.time() / 6), 1)}

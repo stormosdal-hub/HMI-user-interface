@@ -1,11 +1,11 @@
 """pi-files.svg - filene på Pi-en i kjøreverket: prosjektmappen, oppsettet install.sh skriver i /etc,
-og tjenestene systemd starter. Vises i README_systemd-service.md."""
+Bluetooth-programmene i /usr/local/lib og tjenestene systemd starter. Vises i README_systemd-service.md."""
 import os
 from svgkit import *
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'pi-files.svg')
 
-W = 1600
-s = Svg(W, 0, 'Filene på Pi-en i kjøreverket: prosjektmappen i /opt/kjoreverk, oppsettet i /etc og tjenestene systemd starter')
+W = 1720
+s = Svg(W, 0, 'Filene på Pi-en i kjøreverket: prosjektmappen i /opt/kjoreverk, oppsettet i /etc, Bluetooth-programmene og tjenestene systemd starter')
 
 # ---------------------------------------------------------------- tittel og forklaring
 s.add(s.text(48, 62, 'Filene på Pi-en i kjøreverket', 30, INK, 600))
@@ -45,6 +45,14 @@ def tree(x, y, w, desc_x, entries):
     return cy, mids
 
 
+def tree_height(w, desc_w, entries):
+    """Høyden treet får, uten å tegne det."""
+    keep = s.parts[:]
+    end, _ = tree(0, 0, w, desc_w, entries)
+    s.parts[:] = keep
+    return end
+
+
 def panel(x, y, w, h, title, sub, accent):
     s.add(s.rect(x, y, w, h, PANEL, LINE))
     s.add(f'<rect x="{x}" y="{y + 12}" width="3" height="{h - 24}" rx="1.5" fill="{accent}"/>')
@@ -53,9 +61,11 @@ def panel(x, y, w, h, title, sub, accent):
 
 
 TOP = 168
+COL_GAP = 40
 start = len(s.parts)        # panelene tegnes bak innholdet når høyden er kjent
 # ---------------------------------------------------------------- /opt/kjoreverk
-OX, OW = 48, 742
+OX = 48
+OW = (W - 96 - COL_GAP) // 2
 opt_entries = [
     (0, 'install.sh', 'setter opp Pi-en', GREEN),
     (0, 'batch-interval.sh', 'hvor ofte recorderen sender en batch', GREEN),
@@ -79,19 +89,28 @@ opt_entries = [
     (2, 'assets/', 'tegningene (SVG)', CYAN),
     (1, 'node_modules/', 'ws og three, så Pi-en ikke trenger internett', INK2),
     (1, 'docs/', 'dokumentasjonen og diagrammene', INK2),
+    (0, 'lcd-editor/', 'LCD-editoren for displayer på Pi-en (Python), bare med install.sh --lcd', INK),
+    (1, 'app/', 'editoren og driverne for displayene', AMBER),
+    (1, 'config.toml', 'displayene, porten og huben', CYAN),
+    (1, 'layouts/', 'skjermbildene du lagrer i editoren', CYAN),
+    (1, 'state/', 'hva displayene viser; install.sh lager mappen', INK2),
+    (1, 'static/', 'nettsiden til editoren', INK2),
+    (0, 'bluetooth/', 'HMI-et over Bluetooth', INK),
 ]
 opt_end, opt_mid = tree(OX + 26, TOP + 84, OW - 26, OX + 330, opt_entries)
 note_y = opt_end + 12
-note, note_end = s.para(OX + 26, note_y, OW - 52, 'Huben skriver i config/ når du lagrer i HMI-en. Ellers skrives ingenting i mappen mens kjøreverket går.', 13, INK3)
+note, note_end = s.para(OX + 26, note_y, OW - 52, 'Huben skriver i hmi-core/config/ når du lagrer i HMI-en, og LCD-editoren i lcd-editor/layouts/ og state/ når du lagrer, trykker Deploy eller endrer et display. Ellers skrives ingenting i mappen mens kjøreverket går.', 13, INK3)
 s.add(note)
-opt_h = note_end + 18 - TOP
+opt_nat = note_end + 18 - TOP
 
 # ---------------------------------------------------------------- /etc
-EX, EW = 830, 722
+EX = OX + OW + COL_GAP
+EW = W - 48 - EX
 etc_entries = [
     (0, 'kjoreverk/', '', INK),
     (1, 'vehicle', 'kjøreverkets navn: kv_52', CYAN),
     (1, 'recorder.json', 'serveren, nøkkelen og sendSeconds; bare brukeren kan lese den (640, root:pi)', CYAN),
+    (1, 'bt.json', 'PIN-koden for Bluetooth, og om det er på; bare root kan lese den (600)', CYAN),
     (1, 'instances/', 'kommandolinjen til hver tjeneste, SCRIPT_ARGS=…', INK),
     (2, 'hub.env', 'hmi-core/hub.js', CYAN),
     (2, 'tcplink-adapter.env', 'hmi-core/adapters/tcplink-adapter.js --plc=10.0.123.51:2000', CYAN),
@@ -100,20 +119,44 @@ etc_entries = [
     (0, 'systemd/', '', INK),
     (1, 'system/', '', INK),
     (2, 'kjoreverk@.service', 'malen: node $SCRIPT_ARGS i /opt/kjoreverk, som pi, startes på nytt etter 2 s', CYAN),
+    (2, 'kjoreverk-bt.service', 'HMI-et over Bluetooth: bt-hmi.py som root', CYAN),
+    (2, 'kjoreverk-bt-dhcp.service', 'adressene til nettbrettene: bt-dhcp.py som root', CYAN),
+    (2, 'kjoreverk-lcd.service', 'LCD-editoren: python3 -B -m app i lcd-editor/, som pi', CYAN),
     (2, 'multi-user.target.wants/', '', INK),
     (3, 'kjoreverk@hub.service …', 'lenkene systemctl enable lager: tjenestene starter ved oppstart', CYAN),
     (1, 'timesyncd.conf.d/', '', INK),
     (2, 'kjoreverk.conf', 'tidsserveren: NTP=10.0.0.104', CYAN),
     (1, 'journald.conf.d/', '', INK),
     (2, 'kjoreverk.conf', 'loggene i RAM: Storage=volatile', CYAN),
+    (0, 'dhcpcd.conf', 'denyinterfaces pan0 bnep*: dhcpcd lar Bluetooth-nettet være', CYAN),
+    (0, 'default/', '', INK),
+    (1, 'dhcp-helper', '-e pan0: reléet for PLS-siden sender ikke nettbrettenes DHCP videre', CYAN),
 ]
 etc_end, etc_mid = tree(EX + 26, TOP + 84, EW - 26, EX + 330, etc_entries)
-etc_h = max(etc_end + 18 - TOP, opt_h)
-opt_h = etc_h
+etc_nat = etc_end + 18 - TOP
+
+# ---------------------------------------------------------------- /usr/local/lib/kjoreverk-bt
+# under /etc, med plass til høyre for pilen fra /etc til systemd
+UW = EW - 190
+usr_entries = [
+    (0, 'bt-hmi.py', 'Bluetooth-nettet pan0 og paringen med PIN-koden', AMBER),
+    (0, 'bt-dhcp.py', 'gir nettbrettene adresser fra .200', AMBER),
+    (0, 'btnet.py', 'innstillingene og adressen, felles for de to', INK2),
+]
+USR_GAP = 24
+usr_h = 84 + tree_height(UW - 26, 174, usr_entries) + 18
+
+# venstre panel og høyre kolonne slutter likt; /usr/local står nederst i kolonnen
+COL_H = max(opt_nat, etc_nat + USR_GAP + usr_h)
+opt_h = COL_H
+etc_h = COL_H - USR_GAP - usr_h
+usr_top = TOP + etc_h + USR_GAP
+tree(EX + 26, usr_top + 84, UW - 26, EX + 200, usr_entries)
 
 content, s.parts = s.parts, []
 panel(OX, TOP, OW, opt_h, '/opt/kjoreverk', 'Prosjektmappen. Lik på alle Pi-ene: den kopieres hit.', AMBER)
 panel(EX, TOP, EW, etc_h, '/etc', 'Oppsettet for dette kjøreverket. install.sh skriver det.', GREEN)
+panel(EX, usr_top, UW, usr_h, '/usr/local/lib/kjoreverk-bt', 'Bluetooth-programmene, som kjører som root. install.sh kopierer dem hit.', AMBER)
 s.parts = content[:start] + s.parts + content[start:]
 
 # install.sh skriver /etc
@@ -121,45 +164,66 @@ iy = opt_mid['install.sh']
 s.arrow(OX + 450, iy, EX - 3, iy, GREEN, sw=2)
 s.add(s.text(OX + 460, iy - 9, 'skriver oppsettet', 12.5, GREEN, 500))
 
+# install.sh kopierer bluetooth/ til /usr/local/lib/kjoreverk-bt
+by = opt_mid['bluetooth/']
+ty = min(max(by, usr_top + 30), usr_top + usr_h - 30)
+gx = OX + OW + COL_GAP / 2
+s.path_arrow(f'M{OX + 490} {by} H{gx} V{ty} H{EX - 3}' if ty != by else f'M{OX + 490} {by} H{EX - 3}', GREEN, sw=2)
+s.add(s.text(OX + 500, by - 9, 'install.sh kopierer', 12.5, GREEN, 500))
+
 # ---------------------------------------------------------------- systemd
-SY = TOP + opt_h + 70
-SH = 76
+SY = TOP + COL_H + 70
+sd, sd_end = s.para(70, SY + 40, W - 96 - 44, 'For hver lenke i multi-user.target.wants: kjoreverk@<navn> kjører node $SCRIPT_ARGS fra instances/<navn>.env i /opt/kjoreverk som pi. kjoreverk-bt og kjoreverk-bt-dhcp kjører Bluetooth-programmene som root, og kjoreverk-lcd LCD-editoren som pi; de har egne enhetsfiler.', 13.5, INK2)
+SH = int(sd_end - SY + 18)
 s.add(s.rect(48, SY, W - 96, SH, PANEL2, LINE))
 s.add(f'<rect x="48" y="{SY + 12}" width="3" height="{SH - 24}" rx="1.5" fill="{AMBER}"/>')
 s.add(s.text(70, SY + 31, 'systemd', 17, INK, 600, mono=True))
-s.add(s.text(170, SY + 31, 'ved oppstart, og etter 2 s hvis et program stopper', 13.5, INK3))
-s.add(s.text(70, SY + 57, 'For hver lenke i multi-user.target.wants: les malen og instances/<navn>.env, og kjør node $SCRIPT_ARGS i /opt/kjoreverk som pi.', 13.5, INK2))
-# koden fra /opt, oppsettet fra /etc
+s.add(s.text(170, SY + 31, 'ved oppstart, og etter 2–5 s hvis et program stopper', 13.5, INK3))
+s.add(sd)
+# koden fra /opt og /usr/local, oppsettet fra /etc
 s.arrow(OX + OW / 2, TOP + opt_h + 2, OX + OW / 2, SY - 3, AMBER, sw=1.8)
 s.add(s.text(OX + OW / 2 + 12, TOP + opt_h + 40, 'koden og prosjektet', 12.5, AMBER, 500))
-s.arrow(EX + EW / 2, TOP + etc_h + 2, EX + EW / 2, SY - 3, CYAN, sw=1.8)
-s.add(s.text(EX + EW / 2 + 12, TOP + etc_h + 40, 'malen, kommandolinjene og lenkene', 12.5, CYAN, 500))
+ux = EX + UW / 2
+s.arrow(ux, usr_top + usr_h + 2, ux, SY - 3, AMBER, sw=1.8)
+s.add(s.text(ux - 12, TOP + COL_H + 40, 'Bluetooth-programmene', 12.5, AMBER, 500, 'end'))
+ex = EX + UW + (EW - UW) / 2
+s.arrow(ex, TOP + etc_h + 2, ex, SY - 3, CYAN, sw=1.8)
+s.add(s.text(ex - 12, TOP + COL_H + 40, 'enhetsfilene, kommandolinjene og lenkene', 12.5, CYAN, 500, 'end'))
 
 # ---------------------------------------------------------------- tjenestene
 TY = SY + SH + 56
-GAP = 30
-TW = (W - 96 - 3 * GAP) / 4
+GAP = 24
 services = [
-    ('kjoreverk@hub', 'node hmi-core/hub.js', [
-        'Huben og HMI-en: http://<pi>:8080.',
+    ('kjoreverk@hub', ['node hmi-core/hub.js'], [
+        'Huben og HMI-en: http://<pi>:8080, også over Bluetooth.',
         'Leser og lagrer prosjektet i hmi-core/config/.',
-        ('Leser /etc/kjoreverk/vehicle.', INK3)], 'nettleserne, port 8080'),
-    ('kjoreverk@tcplink-adapter', 'node hmi-core/adapters/tcplink-adapter.js --plc=…', [
+        ('Leser /etc/kjoreverk/vehicle.', INK3)], ['nettleserne, port 8080']),
+    ('kjoreverk@tcplink-adapter', ['node hmi-core/adapters/', 'tcplink-adapter.js --plc=…'], [
         'Forbindelsen til PLS-en, med navnene fra PLS-en.',
         'Leser kjoreverk-options.json.',
-        ('Leser /etc/kjoreverk/vehicle.', INK3)], 'PLS-en, TCP port 2000'),
-    ('kjoreverk@plcdiag-adapter', 'node hmi-core/adapters/plcdiag-adapter.js --plc=…', [
+        ('Leser /etc/kjoreverk/vehicle.', INK3)], ['PLS-en, TCP port 2000']),
+    ('kjoreverk@plcdiag-adapter', ['node hmi-core/adapters/', 'plcdiag-adapter.js --plc=…'], [
         'PLS-ens diagnosebuffer, når PLS-en melder en feil. Bare i RAM.',
         'Leser web-sidene med plcdiag-web.js.',
-        ('Leser /etc/kjoreverk/vehicle.', INK3)], 'PLS-ens web-server, https'),
-    ('kjoreverk@recorder', 'node hmi-core/recorder.js', [
+        ('Leser /etc/kjoreverk/vehicle.', INK3)], ['PLS-ens web-server, https']),
+    ('kjoreverk@recorder', ['node hmi-core/recorder.js'], [
         'Sender taggene og hendelsene til den sentrale serveren. Skriver ingenting til SD-kortet.',
-        ('Leser /etc/kjoreverk/recorder.json og vehicle.', INK3)], 'den sentrale serveren'),
+        ('Leser /etc/kjoreverk/recorder.json og vehicle.', INK3)], ['den sentrale serveren']),
+    ('kjoreverk-bt', ['python3 bt-hmi.py'], [
+        'Bluetooth-nettet pan0: nettbrettene parer med PIN-koden og når HMI-et på http://192.168.1.<nr>:8080.',
+        'kjoreverk-bt-dhcp (bt-dhcp.py) gir dem adresser.',
+        ('Av med install.sh --no-bluetooth. Leser /etc/kjoreverk/bt.json og vehicle.', INK3)], ['nettbrettene, Bluetooth']),
+    ('kjoreverk-lcd', ['python3 -B -m app'], [
+        'LCD-editoren: http://<pi>:8000. Skjermbilder til displayene, med taggene fra huben.',
+        'Displayene henger i pluggen X1, på I2C og SPI. Bryterne på INN0–INN7 blar mellom fanene.',
+        ('Bare med install.sh --lcd. Leser lcd-editor/config.toml og vehicle.', INK3)],
+     ['nettleserne, port 8000', 'displayene på X1', 'inngangene INN0–INN7']),
 ]
+TW = (W - 96 - (len(services) - 1) * GAP) / len(services)
 heights = []
 for i, (name, cmd, lines, net) in enumerate(services):
     x = 48 + i * (TW + GAP)
-    h = s.box(x, TY, TW, name, [(cmd, AMBER, True)] + lines, accent=AMBER, mono_title=True)
+    h = s.box(x, TY, TW, name, [(c, AMBER, True) for c in cmd] + lines, accent=AMBER, mono_title=True, title_size=14)
     heights.append(h)
     s.arrow(x + TW / 2, SY + SH + 2, x + TW / 2, TY - 3, AMBER, sw=1.8)
     s.add(s.text(x + TW / 2 + 10, SY + SH + 32, 'starter', 12.5, AMBER, 500))
@@ -167,11 +231,13 @@ NY = TY + max(heights) + 46
 for i, (name, cmd, lines, net) in enumerate(services):
     x = 48 + i * (TW + GAP)
     s.arrow(x + TW / 2, TY + heights[i] + 2, x + TW / 2, NY - 6, INK3, both=True, dash='5 4', sw=1.6)
-    s.add(s.text(x + TW / 2, NY + 12, net, 13, INK3, 500, 'middle'))
+    for j, n in enumerate(net):
+        s.add(s.text(x + TW / 2, NY + 12 + j * 18, n, 13, INK3, 500, 'middle'))
+net_end = NY + 12 + (max(len(n) for *_, n in services) - 1) * 18
 
 # ---------------------------------------------------------------- oppdatering
-UY = NY + 48
-up, up_end = s.para(48, UY, W - 96, 'Oppdatere: kopier en ny prosjektmappe over /opt/kjoreverk, og kjør sudo bash /opt/kjoreverk/install.sh --yes. Oppsettet i /etc beholder navnet, PLS-en, serveren og nøkkelen, og tjenestene startes på nytt med den nye koden.', 14, INK2)
+UY = net_end + 36
+up, up_end = s.para(48, UY, W - 96, 'Oppdatere: kopier en ny prosjektmappe over /opt/kjoreverk, og kjør sudo bash /opt/kjoreverk/install.sh --yes. Oppsettet i /etc beholder navnet, PLS-en, serveren, nøkkelen og PIN-koden, og om Bluetooth og LCD-editoren er på. Tjenestene startes på nytt med den nye koden. Kopier lcd-editor/layouts/ fra Pi-en først, ellers kan skjermbildene du har laget der, bli skrevet over.', 14, INK2)
 s.add(up)
 s.h = int(up_end + 36)
 

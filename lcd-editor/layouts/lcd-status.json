@@ -1,0 +1,75 @@
+{
+ "name": "LCD-status",
+ "kind": "char",
+ "width": 16,
+ "height": 2,
+ "refresh": 1,
+ "elements": [
+  {
+   "id": "klokke",
+   "color": 1,
+   "align": "left",
+   "text": "{time}",
+   "type": "text",
+   "w": "",
+   "x": 0,
+   "y": 0
+  },
+  {
+   "id": "termo",
+   "color": 1,
+   "icon": "thermometer",
+   "type": "icon",
+   "x": 9,
+   "y": 0
+  },
+  {
+   "id": "temp",
+   "color": 1,
+   "align": "right",
+   "decimals": 1,
+   "prefix": "",
+   "source": "cpu_temp",
+   "suffix": "°C",
+   "type": "value",
+   "w": 6,
+   "x": 10,
+   "y": 0
+  },
+  {
+   "id": "cpu",
+   "color": 1,
+   "align": "left",
+   "text": "CPU",
+   "type": "text",
+   "w": "",
+   "x": 0,
+   "y": 1
+  },
+  {
+   "id": "stolpe",
+   "color": 1,
+   "max": 100,
+   "min": 0,
+   "source": "cpu_percent",
+   "type": "bar",
+   "w": 8,
+   "x": 4,
+   "y": 1
+  },
+  {
+   "id": "prosent",
+   "color": 1,
+   "align": "right",
+   "decimals": 0,
+   "prefix": "",
+   "source": "cpu_percent",
+   "suffix": "%",
+   "type": "value",
+   "w": 4,
+   "x": 12,
+   "y": 1
+  }
+ ],
+ "updated": 1794318207.3024929
+}

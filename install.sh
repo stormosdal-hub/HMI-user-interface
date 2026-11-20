@@ -10,6 +10,8 @@
 #   Bluetooth           HMI-et for nettbrett på http://192.168.1.<kjøreverksnummer>:8080, paret med en
 #                       PIN-kode per kjøreverk: bluetooth/ i /usr/local/lib/kjoreverk-bt og
 #                       /etc/kjoreverk/bt.json (ikke med --no-bluetooth)
+#   LCD-editoren        skjermbilder til displayer på Pi-en, med taggene fra huben: lcd-editor/ som
+#                       kjoreverk-lcd.service (bare med --lcd, og så til --no-lcd)
 #
 # Den kjøres fra prosjektmappen, helst /opt/kjoreverk, og setter opp tjenestene for mappen den
 # ligger i:
@@ -43,6 +45,9 @@ BT_DHCP_UNIT=/etc/systemd/system/kjoreverk-bt-dhcp.service
 BT_POOL_FIRST=200                                     # nettbrettene får .200 og oppover (bluetooth/btnet.py)
 DHCPCD_CONF=/etc/dhcpcd.conf
 DHCP_HELPER_DEFAULT=/etc/default/dhcp-helper
+LCD_DIR=$PROJECT/lcd-editor
+LCD_UNIT=/etc/systemd/system/kjoreverk-lcd.service
+OLD_LCD_SERVICE=oled-editor.service                   # LCD-editorens egen tjeneste, fra install-service.sh
 
 VEHICLE_RX='^[A-Za-z_][A-Za-z0-9_.-]{0,31}$'            # som lib/vehicle.js
 VEHICLE_RULE='a letter first, then letters, digits, _ . -; at most 32 characters'
@@ -71,6 +76,8 @@ Bluetooth. Run it from the project folder, preferably $RECOMMENDED:
   --no-bluetooth   no HMI over Bluetooth (stops it if it runs; it stays off when this is run again)
   --bluetooth      the HMI over Bluetooth on again after --no-bluetooth (it is on by default)
   --bt-pin PIN     the PIN a tablet types once to pair, 4-16 digits (default: the one set up, else a new one)
+  --lcd            the LCD editor and the displays on this Pi (lcd-editor/); it stays on when this is run again
+  --no-lcd         no LCD editor (stops it if it runs)
   -y, --yes       don't ask; use what is given and what is set up already
   -h, --help       this text
 
@@ -85,7 +92,7 @@ warn() { printf 'warning: %s\n' "$*" >&2; }
 die()  { printf 'install.sh: %s\n' "$*" >&2; exit 1; }
 
 # ---------------------------------------------------------------- valgene
-vehicle='' plc='' server='' token='' user='' ntp='' no_recorder=0 disk_logs=0 yes=0 bt_flag='' bt_pin=''
+vehicle='' plc='' server='' token='' user='' ntp='' no_recorder=0 disk_logs=0 yes=0 bt_flag='' bt_pin='' lcd_flag=''
 while [ $# -gt 0 ]; do
   arg=$1; shift
   val=''
@@ -109,6 +116,8 @@ while [ $# -gt 0 ]; do
     --disk-logs)   disk_logs=1 ;;
     --bluetooth)    bt_flag=on ;;
     --no-bluetooth) bt_flag=off ;;
+    --lcd)         lcd_flag=on ;;
+    --no-lcd)      lcd_flag=off ;;
     -y|--yes)      yes=1 ;;
     -h|--help)     usage; exit 0 ;;
     *)             die "unknown option $arg (see --help)" ;;
@@ -279,6 +288,70 @@ if [ $bluetooth -eq 1 ]; then
   fi
 fi
 
+# LCD-editoren er av, med mindre --lcd er gitt nå eller den er slått på fra før. Den er Python: den
+# trenger 3.11 eller nyere med flask og PIL, fra lcd-editor/.venv eller systemets python3.
+# LCD_CHECK skriver det som mangler (exit 1), eller hva displayene må klare seg uten.
+LCD_CHECK='
+import importlib.util, sys
+def has(m):
+    try:
+        return importlib.util.find_spec(m) is not None
+    except ImportError:
+        return False
+if sys.version_info < (3, 11):
+    print("it needs Python 3.11 or newer, and this is %d.%d (Raspberry Pi OS Bookworm or newer has it)" % sys.version_info[:2])
+    sys.exit(1)
+need = [p for m, p in (("flask", "python3-flask"), ("PIL", "python3-pil")) if not has(m)]
+if need:
+    print("python3 needs %s: sudo apt install %s" % (" and ".join(need), " ".join(need)))
+    sys.exit(1)
+without = [w for m, w in (("psutil", "the system values (python3-psutil)"), ("smbus2", "I2C displays (python3-smbus2)"),
+                          ("luma.oled", "OLEDs (luma.oled, see lcd-editor/README.md)")) if not has(m)]
+tft = [p for m, p in (("spidev", "python3-spidev"), ("lgpio", "python3-lgpio"), ("numpy", "python3-numpy")) if not has(m)]
+if not has("lgpio"):
+    without.append("the inputs INN0-INN7 (python3-lgpio)")
+if tft:
+    without.append("the TFT (%s)" % " ".join(tft))
+print(", ".join(without))
+'
+LCD_PORT='
+import sys, tomllib
+try:
+    with open(sys.argv[1], "rb") as f:
+        print(int(tomllib.load(f).get("server", {}).get("port", 8000)))
+except (OSError, ValueError) as e:
+    print("%s can not be read: %s" % (sys.argv[1], e))
+    sys.exit(1)
+'
+lcd=0
+case $lcd_flag in
+  on)  lcd=1 ;;
+  '')  if systemctl is-enabled --quiet kjoreverk-lcd.service 2>/dev/null; then lcd=1; fi ;;
+esac
+lcd_missing='' lcd_python='' lcd_without='' lcd_port='' lcd_groups=''
+if [ $lcd -eq 1 ]; then
+  if [ ! -f "$LCD_DIR/app/__main__.py" ]; then lcd_missing="$LCD_DIR is missing: copy the whole project folder"
+  elif systemctl is-active --quiet "$OLD_LCD_SERVICE" 2>/dev/null; then
+    lcd_missing="the LCD editor's own service ${OLD_LCD_SERVICE%.service} runs, on the same port and displays: sudo systemctl disable --now ${OLD_LCD_SERVICE%.service}, then run this again with --lcd"
+  else
+    for py in "$LCD_DIR/.venv/bin/python3" /usr/bin/python3; do
+      [ -x "$py" ] || continue
+      # -I: bare Pythons egne mapper (ikke den vi står i), -B: ingen .pyc-filer
+      if out=$("$py" -I -B -c "$LCD_CHECK" 2>&1); then lcd_python=$py; lcd_without=$out; break; fi
+      lcd_missing=$out
+    done
+    if [ -n "$lcd_python" ]; then
+      lcd_missing=''
+      lcd_port=$("$lcd_python" -I -B -c "$LCD_PORT" "$LCD_DIR/config.toml" 2>&1) || { lcd_missing=$lcd_port; lcd_python=''; }
+    elif [ -z "$lcd_missing" ]; then lcd_missing="python3 isn't installed"
+    fi
+  fi
+  [ -z "$lcd_missing" ] || lcd=0
+  # I2C, SPI og GPIO-ene: gruppene som finnes (Raspberry Pi OS har dem)
+  for g in i2c spi gpio; do getent group "$g" >/dev/null 2>&1 && lcd_groups="$lcd_groups $g"; done
+  lcd_groups=${lcd_groups# }
+fi
+
 # ---------------------------------------------------------------- oversikten
 step "Setting up this Pi"
 say "  project      $PROJECT"
@@ -294,6 +367,12 @@ say "  logs         $([ $disk_logs -eq 1 ] && echo 'on the SD card' || echo 'in 
 if [ $bluetooth -eq 1 ]; then say "  Bluetooth    \"$bt_name\", HMI at http://$bt_address:$HUB_PORT, PIN $bt_pin_note"
 elif [ -n "$bt_missing" ]; then say "  Bluetooth    NOT SET UP: $bt_missing"
 else say "  Bluetooth    off (--no-bluetooth)"
+fi
+if [ $lcd -eq 1 ]; then
+  say "  LCD editor   port $lcd_port, the displays in lcd-editor/config.toml, with $lcd_python"
+  [ -z "$lcd_without" ] || say "               without $lcd_without"
+elif [ -n "$lcd_missing" ]; then say "  LCD editor   NOT SET UP: $lcd_missing"
+else say "  LCD editor   off (--lcd sets it up)"
 fi
 [ "$PROJECT" = "$RECOMMENDED" ] || say "  note         the recommended place for the project folder is $RECOMMENDED"
 if LC_ALL=C grep -q '[^ -~]' <<<"$PROJECT"; then warn "the path $PROJECT has letters outside a-z (like ø); $RECOMMENDED is safer"; fi
@@ -535,6 +614,45 @@ else
   fi
 fi
 
+# ---------------------------------------------------------------- LCD-editoren
+if [ $lcd -eq 1 ]; then
+  step "The LCD editor"
+  # deploy lagrer hva displayene viser i state/, når noen trykker på knappen; ellers skrives ingenting
+  install -d -o "$user" -g "$group" "$LCD_DIR/state"
+  {
+    cat <<EOF
+# Written by $PROJECT/install.sh, which rewrites it each time it runs (install.sh --no-lcd turns it off).
+# The LCD editor ($LCD_DIR): screens for the displays on this Pi, with the hub's tags.
+# The displays and the port are in $LCD_DIR/config.toml.
+[Unit]
+Description=Kjoreverk: the LCD editor and the displays (lcd-editor)
+After=network.target kjoreverk@hub.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+# -B: no .pyc files, so nothing is written to the SD card
+ExecStart=$lcd_python -B -m app
+WorkingDirectory=$LCD_DIR
+User=$user
+EOF
+    [ -z "$lcd_groups" ] || printf 'SupplementaryGroups=%s\n' "$lcd_groups"
+    cat <<EOF
+Restart=always
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  } | put "$LCD_UNIT" 644
+  say "  the editor on port $lcd_port drives the displays in lcd-editor/config.toml"
+elif systemctl is-enabled --quiet kjoreverk-lcd.service 2>/dev/null || systemctl is-active --quiet kjoreverk-lcd.service 2>/dev/null; then
+  step "The LCD editor"
+  systemctl disable --now --quiet kjoreverk-lcd.service || true
+  say "  stopped    kjoreverk-lcd.service"
+fi
+[ -z "$lcd_missing" ] || warn "the LCD editor isn't set up: $lcd_missing"
+
 # ---------------------------------------------------------------- tjenestene
 step "Starting the services"
 # En instans fra før med et program som ikke lenger finnes (binary-adapter), stoppes.
@@ -559,6 +677,7 @@ elif systemctl is-enabled --quiet kjoreverk@recorder.service 2>/dev/null || syst
   say "  stopped    kjoreverk@recorder.service"
 fi
 [ $bluetooth -eq 0 ] || units+=(kjoreverk-bt.service kjoreverk-bt-dhcp.service)
+[ $lcd -eq 0 ] || units+=(kjoreverk-lcd.service)
 systemctl daemon-reload
 systemctl enable --quiet "${units[@]}"
 systemctl restart "${units[@]}"
@@ -581,6 +700,22 @@ done
 if [ $hub_ok -eq 1 ]; then say "  the hub answers on port $HUB_PORT"
 else say "  the hub doesn't answer on port $HUB_PORT   see: journalctl -u kjoreverk@hub.service -n 30 --no-pager"; ok=0
 fi
+if [ $lcd -eq 1 ]; then
+  # editoren svarer på /api/hub med om den har fått taggene fra huben (den prøver hvert 3. sekund)
+  lcd_state=''
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    lcd_state=$("$NODE" -e '
+      require("http").get("http://127.0.0.1:" + process.argv[1] + "/api/hub", r => {
+        let b = ""; r.on("data", d => { b += d; });
+        r.on("end", () => { try { const h = JSON.parse(b) || {}; process.stdout.write(h.connected ? "connected to the hub (" + h.tags + " tags)" : "not connected to the hub: " + (h.error || "no hub in config.toml")); } catch (e) { process.exit(1); } });
+      }).on("error", () => process.exit(1))' "$lcd_port") || lcd_state=''
+    case $lcd_state in connected*) break ;; esac
+    sleep 1
+  done
+  if [ -n "$lcd_state" ]; then say "  the LCD editor answers on port $lcd_port, $lcd_state"
+  else say "  the LCD editor doesn't answer on port $lcd_port   see: journalctl -u kjoreverk-lcd -n 30 --no-pager"; ok=0
+  fi
+fi
 synced=$(timedatectl show -p NTPSynchronized --value 2>/dev/null || true)
 case $synced in
   yes) say "  the clock is synchronized" ;;
@@ -593,6 +728,7 @@ say "  HMI          http://${ip:-<this-pi>}:$HUB_PORT"
 if [ $bluetooth -eq 1 ]; then
   say "  Bluetooth    pair with \"$bt_name\", PIN $bt_pin, turn on Internet access, then http://$bt_address:$HUB_PORT"
 fi
+[ $lcd -eq 0 ] || say "  LCD editor   http://${ip:-<this-pi>}:$lcd_port"
 say "  logs         journalctl -u 'kjoreverk@*' -f"
 say "  again        sudo bash $PROJECT/install.sh   (after an update, or to change something)"
 # Etter alt annet, så et wifi-brudd ikke stopper skriptet midt i (over ssh)

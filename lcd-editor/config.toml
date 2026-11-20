@@ -1,0 +1,133 @@
+# Konfigurasjon for LCD-editoren i kjøreverket.
+# Start tjenesten på nytt etter endringer:  sudo systemctl restart kjoreverk-lcd
+
+[server]
+host = "0.0.0.0"   # 0.0.0.0 = tilgjengelig fra andre maskiner på nettverket
+port = 8000
+
+# Taggene fra kjøreverkets hub (hmi-core/hub.js) blir datakilder med de samme navnene som i
+# HMI-et: {pls.reals_0}, {calc.kv_speed_rpm}, {rec.queue} … Huben går på samme Pi.
+# url = "" slår det av.
+[hub]
+url = "ws://127.0.0.1:8080"
+
+# ---------------------------------------------------------------------------
+# Displayer. Du kan ha flere – f.eks. to SSD1306 på adresse 0x3C og 0x3D, og
+# et LCD på samme buss.
+#   driver:  ssd1306 | sh1106 | ssd1309 | ssd1315   (1.3"-moduler er ofte sh1106)
+#            hd44780 = tegn-LCD (1602/2004) med PCF8574 I2C-adapter
+#            st7789  = farge-TFT på SPI
+#   bus:     I2C-buss (1 = GPIO2/SDA og GPIO3/SCL)
+#   rotate:  0 = 0°, 1 = 90°, 2 = 180°, 3 = 270°
+# ---------------------------------------------------------------------------
+[[display]]
+id = "main"
+name = "Hoveddisplay"
+driver = "ssd1306"
+bus = 1
+address = 0x3C
+width = 128
+height = 64
+rotate = 0
+contrast = 255
+
+# 1602 LCD med I2C-adapter (PCF8574). Adressen er som regel 0x27, eller 0x3F
+# på adaptere med PCF8574A – sjekk med «i2cdetect -y 1».
+# Kontrasten stilles med potmeteret bak på adapteren.
+[[display]]
+id = "lcd"
+name = "LCD 1602"
+driver = "hd44780"
+bus = 1
+address = 0x27
+cols = 16          # 20 og 4 for et 2004-display
+rows = 2
+backlight = true
+
+# 2.25" farge-TFT 76×284 med ST7789 på SPI, i pluggen X1 på RaspiPower-kortet (se README for
+# koblingen). Pinnene er GPIO-numre (ikke fysiske pinnenumre).
+#
+# BRUK BARE PINNENE PÅ X1: alle de andre GPIO-ene går til kortets innganger og 24 V-utganger
+# (GPIO 18, 24 og 25 er UTL6, UTL2 og UTL1). DC og BLK bruker CE1 og MISO på X1, som blir vanlige
+# GPIO-er med denne linjen nederst i /boot/firmware/config.txt (og en omstart):
+#     dtoverlay=spi0-1cs,no_miso
+# Linjen slår også på SPI. Virker ikke TFT-en, viser editoren den emulert, med feilen.
+[[display]]
+id = "tft"
+name = "TFT 2.25\""
+driver = "st7789"
+spi_port = 0
+spi_device = 0       # CS til CE0 (GPIO8, X1-9)
+dc_pin = 7           # CE1 på X1-10
+reset_pin = -1       # RES til 3,3 V; panelet får en programvare-reset
+backlight_pin = 9    # MISO på X1-7; -1 hvis BLK går rett til 3,3 V eller GND
+backlight_active_low = true  # lyset er på når BLK er lav (false på de fleste andre moduler)
+width = 76           # panelets egen størrelse, stående
+height = 284
+rotate = 1           # 1 = liggende 284×76; prøv 3 hvis bildet står på hodet
+invert = false       # sett true hvis fargene blir negative
+bgr = false          # sett true hvis rødt og blått er byttet om
+spi_mhz = 32         # senk (f.eks. 16) hvis bildet får støy med lange ledninger
+# offset_x = 82      # panelets plass i kontrollerens minne (standard: midtstilt)
+# offset_y = 18
+
+# [[display]]
+# id = "second"
+# name = "Display 2"
+# driver = "ssd1306"
+# bus = 1
+# address = 0x3D
+# width = 128
+# height = 32
+
+# ---------------------------------------------------------------------------
+# Inngangene INN0–INN7 på RaspiPower-kortet (24 V inn, med optokobler). En layout med flere
+# faner kan bla mellom dem med bryterne; hva hver inngang gjør, velger du i editoren. Editoren
+# bare leser inngangene. enabled = false lar GPIO-ene være i fred (da virker bare knappene i
+# editoren).
+# ---------------------------------------------------------------------------
+[inputs]
+enabled = true
+# gpio = [16, 26, 20, 21, 19, 13, 12, 6]   # INN0–INN7, fra kortets skjema
+# debounce_ms = 30                         # så lenge en bryter må ligge i ro før den teller
+
+# ---------------------------------------------------------------------------
+# Egne datakilder, i tillegg til taggene fra huben. Innebygde kilder (CPU-temp,
+# minne, IP, klokke ...) finnes alltid. Typer:
+#   command – kjører en shell-kommando og bruker utskriften
+#   file    – leser en fil (glob-mønster er lov)
+#   http    – henter en URL (JSON eller tekst)
+# Felles valg:
+#   interval = sekunder mellom hver lesing (standard 5)
+#   regex    = plukk ut første gruppe fra teksten
+#   json     = sti inn i JSON, f.eks. "data.temperature" eller "sensors.0.value"
+#   scale / offset = verdi * scale + offset (bare for tall)
+#   label / unit   = vises i editoren
+# Python-plugins (f.eks. for I2C-sensorer) legges i mappen plugins/.
+# ---------------------------------------------------------------------------
+[[source]]
+name = "wifi_ssid"
+label = "WiFi-nettverk"
+type = "command"
+command = "iwgetid -r"
+interval = 30
+
+# DS18B20 temperatursensor via 1-Wire (krever dtoverlay=w1-gpio):
+# [[source]]
+# name = "ute_temp"
+# label = "Utetemperatur"
+# unit = "°C"
+# type = "file"
+# path = "/sys/bus/w1/devices/28-*/temperature"
+# scale = 0.001
+# interval = 10
+
+# Verdi fra et lokalt API:
+# [[source]]
+# name = "stue_temp"
+# label = "Stue"
+# unit = "°C"
+# type = "http"
+# url = "http://localhost:8080/api/sensor"
+# json = "temperature"
+# interval = 10

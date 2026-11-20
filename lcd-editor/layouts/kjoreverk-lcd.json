@@ -1,0 +1,85 @@
+{
+ "name": "Kjøreverk LCD",
+ "kind": "char",
+ "width": 16,
+ "height": 2,
+ "refresh": 0.5,
+ "elements": [
+  {
+   "id": "n",
+   "type": "text",
+   "text": "n",
+   "x": 0,
+   "y": 0,
+   "w": "",
+   "align": "left",
+   "color": 1
+  },
+  {
+   "id": "fart",
+   "type": "value",
+   "source": "calc.kv_speed_rpm",
+   "decimals": 0,
+   "prefix": "",
+   "suffix": " rpm",
+   "x": 1,
+   "y": 0,
+   "w": 9,
+   "align": "right",
+   "color": 1
+  },
+  {
+   "id": "feil",
+   "type": "value",
+   "source": "pls.zsw1_fault",
+   "true_text": "FEIL",
+   "false_text": "OK",
+   "decimals": "",
+   "prefix": "",
+   "suffix": "",
+   "x": 11,
+   "y": 0,
+   "w": 5,
+   "align": "right",
+   "color": 1
+  },
+  {
+   "id": "m",
+   "type": "text",
+   "text": "M",
+   "x": 0,
+   "y": 1,
+   "w": "",
+   "align": "left",
+   "color": 1
+  },
+  {
+   "id": "moment",
+   "type": "value",
+   "source": "calc.moment_Nm",
+   "decimals": 1,
+   "prefix": "",
+   "suffix": " Nm",
+   "x": 1,
+   "y": 1,
+   "w": 9,
+   "align": "right",
+   "color": 1
+  },
+  {
+   "id": "link",
+   "type": "value",
+   "source": "pls.link",
+   "true_text": "PLS",
+   "false_text": "BRUDD",
+   "decimals": "",
+   "prefix": "",
+   "suffix": "",
+   "x": 11,
+   "y": 1,
+   "w": 5,
+   "align": "right",
+   "color": 1
+  }
+ ]
+}
